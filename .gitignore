@@ -1,0 +1,5 @@
+output/
+.building/
+.idea/
+.claude/settings.local.json
+__pycache__/
