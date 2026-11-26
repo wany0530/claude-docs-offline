@@ -25,7 +25,7 @@ A tool that builds an **offline snapshot** of the official Claude Code docs (htt
 | `docs_fetch_json.py` | Reads the page list from `llms.txt`, downloads each `.md` and the images/videos, writes one JSON |
 | `docs_json_to_html.py` | JSON → static HTML site that opens via `file://`; contains its own Markdown→HTML converter |
 | `docs_common.py` | `norm` / `slug`: the shared URL rules |
-| `reference/` | Docs-site screenshot (design reference) |
+| `reference/` | Local-only docs-site screenshot (design reference); git-ignored because it reproduces Anthropic's page |
 
 **`docs.json`**: top-level keys `source, fetched_at, page_count, redirects, unresolved_links, non_page_links, assets_dir, asset_errors, pages[]`. Page keys: `category` (list; `_unlisted` for hidden pages), `title, url, description, content, nav_label, assets` ({remote URL: `assets/file`}), and `error` on a failed fetch.
 

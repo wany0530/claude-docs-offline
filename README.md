@@ -81,5 +81,7 @@ python docs_json_to_html.py output/YYYY-MM-DD/docs.json output/YYYY-MM-DD/html
 
 ## 참고
 
-- 공식 문서는 Anthropic이 소유합니다. 이 저장소는 문서 사본을 담지 않고 수집 도구만 담습니다. 다만 추적되는 로그의 변경 요약에는 바뀐 줄의 일부(줄당 최대 140자)가 인용될 수 있습니다.
+- 이 도구는 **비공식**이며 Anthropic과 관련이 없습니다. Claude, Claude Code는 Anthropic의 상표입니다.
+- 공식 문서의 내용과 이미지의 저작권은 Anthropic에 있습니다. 생성된 `output/`은 개인 열람용으로만 쓰고 재배포하지 마세요.
+- 이 저장소는 문서 사본을 담지 않고 수집 도구만 담습니다. 다만 추적되는 로그의 변경 요약에는 바뀐 줄의 일부(줄당 최대 140자)가 인용될 수 있습니다.
 - 이 저장소에서 Claude Code로 작업할 때의 상세 지침은 [`CLAUDE.md`](CLAUDE.md)(영문)에 있습니다.

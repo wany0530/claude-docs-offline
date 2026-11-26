@@ -3,3 +3,4 @@ output/
 .idea/
 .claude/settings.local.json
 __pycache__/
+reference/
