@@ -13,12 +13,7 @@ tests/e2e/.site/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
 
-# 개발 전용 파일: 내 PC에는 두되 공개 저장소(일반 사용자용)에는 올리지 않는다
-tests/
-.github/
-ci/
-.coveragerc
-requirements-dev.txt
-.gitattributes
+# 로컬 전용 (공개 저장소에는 올리지 않는다)
 CLAUDE.md
 .mcp.json
+.playwright-mcp/
