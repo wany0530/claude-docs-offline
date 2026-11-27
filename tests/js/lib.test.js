@@ -151,3 +151,16 @@ test("키보드: 포커스 가두기는 끝에서 반대편으로 돈다", () =>
   assert.equal(L.cycle(-1, 3, -1), 2);
   assert.equal(L.cycle(0, 0, 1), -1);
 });
+
+test("snippetRange: 본문 앞의 제목은 건너뛰고, 건너뛴 자리에는 ... 을 붙이지 않는다", () => {
+  const d = L.prepare([{ t: "Hooks reference", x: "Hooks reference Reference for hook events. " + "word ".repeat(80) + "needle tail", h: [], p: "a.html" }])[0];
+  const first = L.snippetRange(d, d.lx.indexOf("reference for"));
+  assert.equal(d.x.slice(first[0], first[0] + 9), "Reference");
+  assert.equal(first[2], false);
+  const far = L.snippetRange(d, d.lx.indexOf("needle"));
+  assert.equal(far[2], true);
+  const inTitle = L.snippetRange(d, 0); // 제목에서만 맞아도 미리보기는 제목 뒤에서 시작
+  assert.equal(inTitle[0], "Hooks reference ".length);
+  const plain = L.snippetRange({ t: "Other", x: "no title prefix here", lx: "" }, 3);
+  assert.deepEqual(plain.slice(0, 1), [0]);
+});

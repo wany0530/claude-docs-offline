@@ -29,7 +29,7 @@ function run(){var q=box.value.trim().toLowerCase();res.textContent="";var terms
    var head=DocsLib.pickHeading(d,terms);
    a.href=root+d.p+(head?"#"+head[1]:"");var b=document.createElement("b");mark(b,d.t,terms);a.appendChild(b);
    var i=DocsLib.firstMatchIndex(d,terms);
-   var sn=document.createElement("span");if(i>=0){var from=Math.max(0,i-50);sn.appendChild(document.createTextNode(from?"...":""));mark(sn,d.x.slice(from,i+110),terms);sn.appendChild(document.createTextNode("..."))}
+   var sn=document.createElement("span");if(i>=0){var r=DocsLib.snippetRange(d,i);sn.appendChild(document.createTextNode(r[2]?"...":""));mark(sn,d.x.slice(r[0],r[1]),terms);sn.appendChild(document.createTextNode("..."))}
    a.appendChild(sn);res.appendChild(a)})})}
 var timer;box.addEventListener("input",function(){clearTimeout(timer);timer=setTimeout(run,150)});
 })();

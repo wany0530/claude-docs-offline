@@ -173,6 +173,20 @@ for (const lang of ["en", "ko"]) {
       await expect(page.locator("textarea")).toHaveCount(0); // 임시 입력칸은 치운다
     });
 
+    test("검색 창 모양: 미리보기가 제목을 되풀이하지 않고, 입력창이 패널의 둥근 모서리를 따른다", async ({ page }) => {
+      await page.keyboard.press("Control+k");
+      const modal = page.locator("#searchmodal");
+      await modal.locator("input").fill(t.search);
+      const hit = modal.locator("a.hit").first();
+      await expect(hit).toContainText(t.hit);
+      const title = (await hit.locator("b").innerText()).trim();
+      const preview = (await hit.locator("span").innerText()).replace(/^\.\.\./, "").trim();
+      expect(preview.length, "미리보기가 비어 있지 않다").toBeGreaterThan(0);
+      expect(preview.startsWith(title), `미리보기 "${preview}" 가 제목 "${title}" 로 시작`).toBe(false);
+      const r = await modal.locator("input").evaluate((e) => getComputedStyle(e).borderTopLeftRadius);
+      expect(parseFloat(r), "입력창 위쪽 모서리 반지름").toBeGreaterThanOrEqual(16);
+    });
+
     test("검색: 열기, 결과, 강조, 이동, 닫기, 일치 없음", async ({ page }) => {
       const indexRequests = [];
       page.on("request", (r) => { if (/search-data-/.test(r.url())) indexRequests.push(r.url()); });

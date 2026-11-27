@@ -53,6 +53,9 @@ function rankDocs(docs,terms){var hits=[];
 function pickHeading(d,terms){return d.h.filter(function(x){return terms.some(function(t){return x[0].toLowerCase().indexOf(t)>=0})})[0]}
 /* 본문에서 검색어가 처음 나오는 위치, 없으면 -1 */
 function firstMatchIndex(d,terms){var i=-1;terms.forEach(function(t){var k=d.lx.indexOf(t);if(k>=0&&(i<0||k<i))i=k});return i}
+/* 결과 미리보기 구간 [시작, 끝, 앞에 ...을 붙일지]. 색인 본문은 제목으로 시작하므로 제목은 건너뛴다(제목은 이미 위에 나온다) */
+function snippetRange(d,i){var s=0;if(d.x.slice(0,d.t.length)===d.t){s=d.t.length;while(d.x.charAt(s)===" ")s++}
+ var from=Math.max(s,i-50);return [from,Math.max(i+110,from+160),from>s]}
 /* text 를 [[강조 여부(0|1), 글자], ...] 조각으로 나눈다 */
 function markSegments(text,terms){var low=text.toLowerCase(),pos=0,out=[];
  while(pos<text.length){var best=-1,bl=0;
@@ -94,7 +97,7 @@ function tokenize(text,cfg){var kw={};cfg.kw.split(" ").forEach(function(w){kw[w
 return {anchorKey:anchorKey,navFirst:navFirst,navHas:navHas,labelMatches:labelMatches,tocClass:tocClass,currentIndex:currentIndex,
  tabIndex:tabIndex,listIndex:listIndex,cycle:cycle,
  prepare:prepare,searchTerms:searchTerms,countOccurrences:countOccurrences,scoreDoc:scoreDoc,rankDocs:rankDocs,
- pickHeading:pickHeading,firstMatchIndex:firstMatchIndex,markSegments:markSegments,
+ pickHeading:pickHeading,firstMatchIndex:firstMatchIndex,snippetRange:snippetRange,markSegments:markSegments,
  langConfig:langConfig,highlightRegex:highlightRegex,tokenize:tokenize}
 })();
 if(typeof module!=="undefined"&&module.exports)module.exports=DocsLib;
