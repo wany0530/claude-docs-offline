@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Claude Code 공식 문서 전체(영어 + 공식 한국어판)를 하나의 JSON 파일로 저장합니다.
 
-사용법:  python docs_fetch_json.py [출력파일.json [에셋폴더]]
+사용법:  python -m docsnap.fetch [출력파일.json [에셋폴더]]
 저장 내용: 페이지별 분류(category) / 본문(content, 원문 그대로) / 좌측 메뉴 이름(nav_label) /
            공식 한국어판(ko: 제목·설명·본문·메뉴 이름. 번역이 아니라 /docs/ko/ 원문이며, 없으면 null) /
            본문 이미지·동영상(에셋폴더, 기본은 출력 JSON 옆 assets/) / 숨은 페이지(_unlisted) / 옛 링크 별칭(redirects)

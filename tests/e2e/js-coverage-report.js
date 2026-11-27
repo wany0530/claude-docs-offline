@@ -9,8 +9,8 @@ const DIR = path.join(__dirname, "test-results", "js-coverage");
 const minArg = process.argv.find((a) => a.startsWith("--min="));
 const MIN = minArg ? Number(minArg.slice(6)) : null;
 
-// 사이트의 nav.js 는 site_src 의 JS 부분을 이 순서로 "\n" 으로 이어 붙인 것이다 (docs_site.JS_PARTS 와 같은 순서)
-const siteModule = fs.readFileSync(path.join(ROOT, "docs_site.py"), "utf8");
+// 사이트의 nav.js 는 site_src 의 JS 부분을 이 순서로 "\n" 으로 이어 붙인 것이다 (docsnap/site/parts.py 의 JS_PARTS 와 같은 순서)
+const siteModule = fs.readFileSync(path.join(ROOT, "docsnap", "site", "parts.py"), "utf8");
 const names = [...siteModule.match(/JS_PARTS = \(([^)]*)\)/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 const texts = names.map((n) => fs.readFileSync(path.join(ROOT, "site_src", n), "utf8").replace(/\r\n/g, "\n"));
 const joined = texts.join("\n");

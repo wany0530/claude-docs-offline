@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""docs_fetch_json.py 가 만든 JSON 을 오프라인에서 바로 열어볼 수 있는 정적 HTML 사이트로 변환합니다.
+"""docsnap.fetch 가 만든 JSON 을 오프라인에서 바로 열어볼 수 있는 정적 HTML 사이트로 변환합니다.
 
-사용법:  python docs_json_to_html.py 입력.json[.gz] [출력폴더 [에셋 원본 폴더]]   (기본 출력: 입력 JSON 옆의 site/)
+사용법:  python -m docsnap.site.convert 입력.json[.gz] [출력폴더 [에셋 원본 폴더]]   (기본 출력: 입력 JSON 옆의 site/)
 결과:    출력폴더/index.html          영어 첫 페이지로 이동하는 바로가기
          출력폴더/en/....html, ko/....html   페이지별 HTML (영어판, 공식 한국어판. 원문 주소 구조 그대로)
          출력폴더/assets/             이미지·동영상 (이미 있으면 복사하지 않음)
