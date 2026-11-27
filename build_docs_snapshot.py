@@ -17,7 +17,6 @@
 import collections
 import gzip
 import io
-import json
 import os
 import re
 import shutil
@@ -28,6 +27,7 @@ from datetime import date, datetime
 
 import docs_diff
 import docs_fetch_json
+import docs_anchors
 import docs_json_to_html
 import docs_verify
 from docs_common import setup_console
@@ -421,7 +421,7 @@ def _run(out_dir, state):
         state["nav_mismatch"] = snap.get("nav_name_mismatch", [])
         log(f"[2/2] HTML 변환: {site_dir}")
         failed_convert = docs_json_to_html.main([json_path, site_dir])
-        state["links"] = dict(docs_json_to_html.REPORT)  # 앵커·링크 검사 결과를 로그에 옮긴다
+        state["links"] = dict(docs_anchors.REPORT)  # 앵커·링크 검사 결과를 로그에 옮긴다
         verdict = docs_verify.check(site_dir)  # 변환기와 무관하게 결과 HTML 의 링크·id 를 전수 재검사
         state["links"]["verify"] = verdict
         vc = verdict["counts"]

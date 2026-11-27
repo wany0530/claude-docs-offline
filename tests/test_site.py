@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 import _path  # noqa: F401
+import docs_anchors
 import docs_json_to_html as conv
 
 
@@ -118,7 +119,7 @@ class Site(unittest.TestCase):
         self.assertIn('id="how-it-works"', read(os.path.join(out, "ko", "b.html")))  # 한국어 아코디언도 영어 id 를 빌려 씀
         self.assertIn("페이지 처음으로 이동", ko)  # 안내 문구는 UI 문구(언어별)
         self.assertIn("no longer exists", en)
-        rep = conv.REPORT
+        rep = docs_anchors.REPORT
         self.assertEqual(rep["counts"]["stale"], 2)  # 영어 1 + 한국어 1
         self.assertEqual(rep["counts"]["strict"], 1)
         self.assertEqual(len(rep["stale"]), 2)

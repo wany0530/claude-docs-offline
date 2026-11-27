@@ -2,7 +2,8 @@ import collections
 import unittest
 
 import _path  # noqa: F401
-from docs_json_to_html import Renderer, anchor_key, plain_text, resolve_anchor, resolve_anchors
+from docs_anchors import resolve_anchor, resolve_anchors
+from docs_markdown import Renderer, anchor_key, plain_text
 
 TARGETS = {"https://code.claude.com/docs/en/hooks": "en/hooks", "https://code.claude.com/docs/en/a/b": "en/a/b"}
 

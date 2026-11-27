@@ -68,10 +68,14 @@ logs/
 |---|---|
 | `build_docs_snapshot.py` | 통합 진입점. 수집 → HTML 변환 → `site/` 교체 → 이력·diff 저장 → 로그 |
 | `docs_fetch_json.py` | `llms.txt`에서 페이지 목록을 읽어 영어 원문(.md), 공식 한국어판(`/docs/ko/`), 에셋을 받아 JSON으로 저장 |
-| `docs_json_to_html.py` | JSON(.gz 가능)을 영어·한국어 정적 HTML 사이트로 변환 (마크다운 변환기, 레이아웃, 검색, 구문 강조 내장) |
+| `docs_json_to_html.py` | JSON(.gz 가능)을 영어·한국어 정적 HTML 사이트로 변환하는 진행 순서 (실제 일은 아래 모듈이 함) |
+| `docs_markdown.py` | 직접 만든 마크다운 → HTML 변환기 (탭·아코디언·카드 컴포넌트 포함) |
+| `docs_anchors.py` | 본문의 `#앵커` 링크를 실제 섹션에 맞춰 확정, 검토 장부 대조 |
+| `docs_site.py` | 화면 문구, 메뉴 트리, 주소 표, `site_src/` 파일 읽기 |
+| `site_src/` | 사이트의 실제 소스: `style.css`, `page.html`, JS(`lib.js` 계산 함수, `app.js` 메뉴·목차·복사, `search.js`, `highlight.js`) |
 | `docs_diff.py` | 보관된 이력 두 개를 비교해 페이지별 diff 출력 (빌드도 이 모듈로 diff 저장) |
 | `docs_common.py` | 수집기·변환기가 공유하는 URL 규칙, 콘솔 UTF-8 설정 |
-| `tests/` | 표준 라이브러리 `unittest` 테스트 (네트워크 불필요) |
+| `tests/` | 표준 라이브러리 `unittest` 테스트 (네트워크 불필요). Node가 있으면 `tests/js/`의 JS 테스트(`node --test`)와 파이썬·JS 앵커 규칙 비교도 함께 실행하고, 없으면 건너뜁니다 |
 
 단계별로 따로 실행할 수도 있습니다.
 

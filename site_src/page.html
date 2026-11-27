@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} - Claude Code Docs (offline)</title>
+<link rel="stylesheet" href="${root}style.css"></head>
+<body data-root="${root}" data-slug="${slug}" data-lang="${lang}">
+<div id="chrome">
+<header id="top">
+<button id="navtoggle" type="button" aria-label="${t_toggle}">&#9776;</button>
+<a class="logo" href="${root}index.html"><span class="star">&#10059;</span>Claude Code Docs<span class="offline">offline</span></a>
+<details class="lang"><summary>${t_lang}</summary><div class="menu"><a href="${en_href}">English</a><a href="${ko_href}">한국어</a></div></details>
+<button id="searchbtn" type="button">${icon_search}<span>${t_search}</span><kbd>Ctrl K</kbd></button>
+</header>
+<nav id="tabs"></nav>
+</div>
+<div id="shell">
+<aside id="nav"></aside>
+<main><article>
+<div class="crumbs">${crumbs}</div>
+${notice}<button id="copypage" type="button">${icon_copy}<span>${t_copy_page}</span></button>
+${body}
+<footer>${t_source}: <a href="${url}">${url}</a> &middot; ${t_snapshot} ${fetched}</footer>
+</article></main>
+<aside id="toc"></aside>
+</div>
+<script type="application/json" id="md-src">${md}</script>
+<script src="${root}nav-data-${lang}.js"></script><script src="${root}nav.js"></script>
+</body></html>

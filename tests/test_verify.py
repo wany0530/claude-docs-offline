@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 import _path  # noqa: F401
-import docs_json_to_html as conv
+import docs_anchors as anchors
 import docs_verify
 
 
@@ -101,28 +101,28 @@ class VerifySite(unittest.TestCase):
 
 class LedgerAndHints(unittest.TestCase):
     def test_ledger_key_drops_language_prefix(self):
-        self.assertEqual(conv.ledger_key("en/agent-sdk/mcp", "in-code"), "agent-sdk/mcp#in-code")
-        self.assertEqual(conv.ledger_key("ko/agent-sdk/mcp", "in-code"), "agent-sdk/mcp#in-code")
+        self.assertEqual(anchors.ledger_key("en/agent-sdk/mcp", "in-code"), "agent-sdk/mcp#in-code")
+        self.assertEqual(anchors.ledger_key("ko/agent-sdk/mcp", "in-code"), "agent-sdk/mcp#in-code")
 
     def test_compare_reports_new_and_changed_but_not_reviewed(self):
         strict = {("en/a", "en/b", "old", "new-id"), ("ko/a", "ko/b", "old", "new-id"),   # 장부와 같음 (두 언어)
                   ("en/a", "en/b", "moved", "other"),                                     # 장부와 다른 id
                   ("en/a", "en/c", "fresh", "fresh-long")}                                # 장부에 없음
         ledger = {"b#old": "new-id", "b#moved": "was-here"}
-        new, changed = conv.compare_ledger(strict, ledger)
+        new, changed = anchors.compare_ledger(strict, ledger)
         self.assertEqual(new, [("c#fresh", "fresh-long")])
         self.assertEqual(changed, [("b#moved", "was-here", "other")])
 
     def test_load_ledger_reads_pairs_and_tolerates_missing_file(self):
-        self.assertEqual(conv.load_ledger("no-such-file.json"), {})
+        self.assertEqual(anchors.load_ledger("no-such-file.json"), {})
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "l.json")
             with open(p, "w", encoding="utf-8") as f:
                 json.dump({"note": "x", "pairs": {"a#b": "c"}}, f)
-            self.assertEqual(conv.load_ledger(p), {"a#b": "c"})
+            self.assertEqual(anchors.load_ledger(p), {"a#b": "c"})
 
     def test_repo_ledger_is_wellformed(self):
-        pairs = conv.load_ledger()
+        pairs = anchors.load_ledger()
         self.assertGreaterEqual(len(pairs), 91)
         for k, v in pairs.items():
             self.assertRegex(k, r"^[^#/][^#]*#[^#]+$")
@@ -130,11 +130,11 @@ class LedgerAndHints(unittest.TestCase):
 
     def test_nearest_id_scores_word_overlap_and_is_only_a_hint(self):
         ids = {"auto-mode-on-bedrock-agent-platform-or-foundry", "unrelated-section"}
-        score, best = conv.nearest_id("enable-auto-mode-on-bedrock-agent-platform-or-foundry", ids)
+        score, best = anchors.nearest_id("enable-auto-mode-on-bedrock-agent-platform-or-foundry", ids)
         self.assertEqual(best, "auto-mode-on-bedrock-agent-platform-or-foundry")
-        self.assertGreaterEqual(score, conv.HINT_MIN)
-        self.assertEqual(conv.nearest_id("zzz", ids), (0.0, ""))
-        self.assertEqual(conv.nearest_id("anything", set()), (0.0, ""))
+        self.assertGreaterEqual(score, anchors.HINT_MIN)
+        self.assertEqual(anchors.nearest_id("zzz", ids), (0.0, ""))
+        self.assertEqual(anchors.nearest_id("anything", set()), (0.0, ""))
 
 
 if __name__ == "__main__":
