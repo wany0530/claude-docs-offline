@@ -5,7 +5,8 @@
 결과:    출력폴더/index.html        전체 목차 (브라우저로 이 파일을 열면 됩니다)
          출력폴더/en/....html       페이지별 HTML (원문 주소 구조 그대로)
          출력폴더/assets/           이미지·동영상
-         출력폴더/style.css, nav.js, nav-data.js   (사이드바·필터 등. 서버 없이 file:// 로 동작)
+         출력폴더/style.css, nav.js, nav-data.js   (사이드바·필터·구문 강조 등. 서버 없이 file:// 로 동작)
+         출력폴더/search-data.js    본문 검색 색인 (처음 검색할 때만 불러옴)
 본문 마크다운 -> HTML 변환기를 직접 구현했고, docs 사이트 내부 링크는 상대 경로로 바꿉니다. 표준 라이브러리만 사용.
 """
 import html
@@ -17,7 +18,7 @@ import sys
 import urllib.parse
 from posixpath import dirname as pdirname, relpath as prelpath
 
-from docs_common import norm, slug as url_slug
+from docs_common import norm, setup_console, slug as url_slug
 
 ALLOWED_TAGS = {
     "a", "b", "i", "u", "em", "strong", "code", "kbd", "sub", "sup", "br", "span", "img", "video", "source",
@@ -79,6 +80,7 @@ class Renderer:
         self.assets = {k.replace("\\&", "&"): v for k, v in assets.items()}
         self.ids, self.used_ids = {}, set()
         self.links = []  # (대상 slug, 앵커) — 나중에 앵커 검사용
+        self.heads = []  # (헤딩 글자, id) — 본문 검색 결과에서 해당 위치로 이동하기 위함
 
     # ---------- 주소 ----------
     def rel(self, path):
@@ -277,8 +279,10 @@ class Renderer:
             m = HEAD.match(line)
             if m:
                 level, text = len(m.group(1)), m.group(2)
-                hid = self.heading_id(self.inline(text))
-                out.append(f'<h{level} id="{hid}">{self.inline(text)}<a class="anchor" href="#{hid}" '
+                rendered = self.inline(text)
+                hid = self.heading_id(rendered)
+                self.heads.append((html.unescape(re.sub(r"<[^>]+>", "", rendered)).strip(), hid))
+                out.append(f'<h{level} id="{hid}">{rendered}<a class="anchor" href="#{hid}" '
                            f'aria-label="Link to this section">#</a></h{level}>')
                 i += 1
                 continue
@@ -330,6 +334,23 @@ class Renderer:
             while lines and (lines[0].startswith(">") or not lines[0].strip()):
                 lines.pop(0)
         return self.blocks(lines)
+
+
+def plain_text(content):
+    """본문 검색용 평문: 마크다운 기호·태그·링크 주소를 걷어내고 공백을 한 칸으로 줄인다 (코드는 내용만 남김)."""
+    lines = content.replace("\r\n", "\n").split("\n")
+    if lines and lines[0].startswith("> ## Documentation Index"):  # render() 와 같은 안내문 제거
+        while lines and (lines[0].startswith(">") or not lines[0].strip()):
+            lines.pop(0)
+    t = "\n".join(l for l in lines if not FENCE.match(l))
+    t = re.sub(r"<!--.*?-->", "", t, flags=re.S)
+    t = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"</?[a-zA-Z][^<>]*>", " ", t)
+    t = re.sub(r"^ {0,3}(?:#{1,6}|>+)[ \t]?", "", t, flags=re.M)
+    t = re.sub(r"^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$", "", t, flags=re.M)
+    t = re.sub(r"[`*|]+|~~", " ", t)
+    return re.sub(r"\s+", " ", html.unescape(t)).strip()
 
 
 # ---------- 사이트 구성 ----------
@@ -420,6 +441,12 @@ blockquote{margin:1em 0;padding:.1em 1em;border-left:4px solid var(--acc);backgr
 th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--side)}
 img,video{max-width:100%;height:auto;border-radius:6px}hr{border:0;border-top:1px solid var(--line);margin:2em 0}
 footer{margin-top:4em;padding-top:1em;border-top:1px solid var(--line);color:var(--mut);font-size:13px}
+mark{background:#fde68a;color:#1f1e1d;border-radius:2px;padding:0 1px}
+#results{margin:0 0 10px}#results .hit{display:block;padding:5px 8px;margin:2px 0;border-radius:6px;color:var(--fg);text-decoration:none;font-size:13px;line-height:1.4}
+#results .hit:hover{background:var(--line)}#results .hit b{display:block;font-size:14px}#results .hit span{color:var(--mut)}
+#results .info{color:var(--mut);font-size:12px;padding:2px 8px}
+.tk-c{color:#6b7280;font-style:italic}.tk-s{color:#15803d}.tk-n{color:#b45309}.tk-k{color:#7c3aed;font-weight:600}.tk-key{color:#1d4ed8}
+@media (prefers-color-scheme:dark){.tk-c{color:#9ca3af}.tk-s{color:#86efac}.tk-n{color:#fbbf24}.tk-k{color:#c4b5fd}.tk-key{color:#93c5fd}}
 .toc ul{list-style:none;padding-left:1.2em}.toc>ul{padding-left:0}.toc li{margin:.2em 0}
 #navtoggle{display:none;position:fixed;top:8px;left:8px;z-index:5;font-size:20px;background:var(--side);color:var(--fg);border:1px solid var(--line);border-radius:6px}
 @media (max-width:900px){#nav{transform:translateX(-100%);z-index:4;transition:transform .15s}body.navopen #nav{transform:none}
@@ -457,12 +484,79 @@ document.querySelectorAll("pre").forEach(function(pre){var b=document.createElem
 })();
 """
 
+# 본문 검색 + 구문 강조. 위 JS 에 이어 붙는 별도 IIFE 들 (raw 문자열이라 백슬래시는 JS 에 그대로 전달됨).
+JS += r"""
+(function(){
+var nav=document.getElementById("nav"),box=nav&&nav.querySelector("input");if(!box)return;
+var root=document.body.dataset.root||"",res=document.createElement("div"),state="idle",docs=null;
+res.id="results";box.parentNode.insertBefore(res,box.nextSibling);
+function load(cb){if(docs)return cb();if(state==="loading")return;state="loading";res.innerHTML='<div class="info">Loading search index...</div>';
+ var s=document.createElement("script");s.src=root+"search-data.js";
+ s.onload=function(){docs=window.DOCS_SEARCH;docs.forEach(function(d){d.lt=d.t.toLowerCase();d.lx=d.x.toLowerCase()});state="ready";cb()};
+ s.onerror=function(){state="idle";res.innerHTML='<div class="info">Search index not found.</div>'};document.head.appendChild(s)}
+function count(h,t){var n=0,i=0;while(n<20&&(i=h.indexOf(t,i))>=0){n++;i+=t.length}return n}
+function mark(parent,text,terms){var low=text.toLowerCase(),pos=0;
+ while(pos<text.length){var best=-1,bl=0;
+  terms.forEach(function(t){var i=low.indexOf(t,pos);if(i>=0&&(best<0||i<best)){best=i;bl=t.length}});
+  if(best<0){parent.appendChild(document.createTextNode(text.slice(pos)));break}
+  if(best>pos)parent.appendChild(document.createTextNode(text.slice(pos,best)));
+  var m=document.createElement("mark");m.textContent=text.slice(best,best+bl);parent.appendChild(m);pos=best+bl}}
+function run(){var q=box.value.trim().toLowerCase();res.innerHTML="";if(q.length<2)return;
+ var terms=q.split(/\s+/).filter(Boolean);
+ load(function(){if(box.value.trim().toLowerCase()!==q)return;res.innerHTML="";var hits=[];
+  docs.forEach(function(d){var score=0;
+   for(var i=0;i<terms.length;i++){var t=terms[i],inT=d.lt.indexOf(t)>=0,inX=d.lx.indexOf(t)>=0,inH=d.h.some(function(h){return h[0].toLowerCase().indexOf(t)>=0});
+    if(!inT&&!inX&&!inH)return;score+=(inT?100:0)+(inH?20:0)+count(d.lx,t)}
+   hits.push({d:d,s:score})});
+  hits.sort(function(a,b){return b.s-a.s});
+  var info=document.createElement("div");info.className="info";info.textContent=hits.length?hits.length+" page(s) match":"No page contains all words";res.appendChild(info);
+  hits.slice(0,30).forEach(function(h){var d=h.d,a=document.createElement("a");a.className="hit";
+   var head=d.h.filter(function(x){return terms.some(function(t){return x[0].toLowerCase().indexOf(t)>=0})})[0];
+   a.href=root+d.p+(head?"#"+head[1]:"");var b=document.createElement("b");mark(b,d.t,terms);a.appendChild(b);
+   var i=-1;terms.forEach(function(t){var k=d.lx.indexOf(t);if(k>=0&&(i<0||k<i))i=k});
+   var sn=document.createElement("span");if(i>=0){var from=Math.max(0,i-50);sn.appendChild(document.createTextNode(from?"...":""));mark(sn,d.x.slice(from,i+110),terms);sn.appendChild(document.createTextNode("..."))}
+   a.appendChild(sn);res.appendChild(a)})})}
+var timer;box.addEventListener("input",function(){clearTimeout(timer);timer=setTimeout(run,150)});
+})();
+(function(){
+var C={c:"#",kw:"if then else elif fi for while do done case esac in function return export local echo cd ls cat grep git npm npx pip python python3 node claude curl mkdir rm cp mv sudo exit set unset source alias read test true false"};
+var JSK="const let var function return if else for while do switch case break continue new class extends import export from default async await try catch finally throw typeof instanceof in of this null undefined true false void yield static interface type enum implements public private readonly";
+var L={bash:C,sh:C,shell:C,zsh:C,console:C,
+ json:{kw:"true false null",key:1},jsonc:{c:"//",kw:"true false null",key:1},
+ python:{c:"#",kw:"def class return if elif else for while in not and or is import from as with try except finally raise pass break continue lambda yield None True False async await self print",tq:1},
+ yaml:{c:"#",kw:"true false null yes no"},yml:{c:"#",kw:"true false null yes no"},toml:{c:"#",kw:"true false"},
+ powershell:{c:"#",kw:"if else elseif foreach for while function return param switch try catch finally throw $true $false $null"},
+ javascript:{c:"//",kw:JSK,bt:1},js:{c:"//",kw:JSK,bt:1},typescript:{c:"//",kw:JSK,bt:1},ts:{c:"//",kw:JSK,bt:1},jsx:{c:"//",kw:JSK,bt:1},tsx:{c:"//",kw:JSK,bt:1}};
+L.ps1=L.powershell;L.py=L.python;
+function re(cfg){var cm=[];
+ if(cfg.c==="#")cm.push("(?<![^\\s])#[^\\n]*");
+ if(cfg.c==="//")cm.push("//[^\\n]*","/\\*[\\s\\S]*?\\*/");
+ var Q3='"'+'"'+'"',S3="'"+"'"+"'",st=[];if(cfg.tq)st.push(Q3+"[\\s\\S]*?"+Q3,S3+"[\\s\\S]*?"+S3);
+ st.push('"(?:[^"\\\\\\n]|\\\\.)*"',"'(?:[^'\\\\\\n]|\\\\.)*'");if(cfg.bt)st.push("`(?:[^`\\\\]|\\\\.)*`");
+ return new RegExp("("+(cm.join("|")||"(?!)")+")|("+st.join("|")+")|(\\b\\d+(?:\\.\\d+)?\\b)|([$A-Za-z_][\\w$-]*)","g")}
+function span(parent,cls,text){var s=document.createElement("span");s.className=cls;s.textContent=text;parent.appendChild(s)}
+document.querySelectorAll("pre[data-lang]").forEach(function(pre){var cfg=L[(pre.dataset.lang||"").toLowerCase()],code=pre.querySelector("code");
+ if(!cfg||!code)return;var text=code.textContent;if(text.length>30000)return;
+ var kw={};cfg.kw.split(" ").forEach(function(w){kw[w]=1});var r=re(cfg),pos=0,m,out=document.createDocumentFragment();
+ while((m=r.exec(text))){if(m.index>pos)out.appendChild(document.createTextNode(text.slice(pos,m.index)));
+  if(m[1])span(out,"tk-c",m[0]);
+  else if(m[2]){var isKey=cfg.key&&/^\\s*:/.test(text.slice(r.lastIndex,r.lastIndex+20));span(out,isKey?"tk-key":"tk-s",m[0])}
+  else if(m[3])span(out,"tk-n",m[0]);
+  else if(kw[m[0]])span(out,"tk-k",m[0]);else out.appendChild(document.createTextNode(m[0]));
+  pos=r.lastIndex;if(m[0].length===0)r.lastIndex++}
+ if(pos<text.length)out.appendChild(document.createTextNode(text.slice(pos)));
+ code.textContent="";code.appendChild(out)});
+})();
+"""
+
+
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     src = argv[0]
     out = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(src)), "html")
-    snap = json.load(open(src, encoding="utf-8"))
+    with open(src, encoding="utf-8") as f:
+        snap = json.load(f)
     pages = snap["pages"]
     assert all(p["content"] is not None for p in pages), "content 가 없는 페이지가 있습니다 (fetch 실패)"
 
@@ -475,12 +569,14 @@ def main(argv=None):
     if snap.get("assets_dir") and os.path.isdir(assets_src):
         shutil.copytree(assets_src, os.path.join(out, "assets"), dirs_exist_ok=True)
 
-    page_ids, page_links, tag_stats = {}, [], 0
+    page_ids, page_links, search = {}, [], []
     for p in pages:
         slug = url_slug(p["url"])
         r = Renderer(slug, targets, p.get("assets", {}))
         body = r.render(p["content"])
         page_ids[slug] = r.used_ids
+        search.append({"t": p["title"], "p": slug + ".html", "h": [list(h) for h in r.heads if h[0]],
+                       "x": plain_text(p["content"])})
         page_links += [(slug, t, f) for t, f in r.links]
         cat = p["category"]
         crumbs = " / ".join(esc("Unlisted" if c == "_unlisted" else c) for c in [cat[0]] + cat[2:])
@@ -494,6 +590,8 @@ def main(argv=None):
     tree = build_tree(pages)
     with open(os.path.join(out, "nav-data.js"), "w", encoding="utf-8") as f:
         f.write("window.DOCS_NAV=" + json.dumps(tree.to_json(), ensure_ascii=False) + ";\n")
+    with open(os.path.join(out, "search-data.js"), "w", encoding="utf-8", newline="\n") as f:  # 첫 검색 때 지연 로드
+        f.write("window.DOCS_SEARCH=" + json.dumps(search, ensure_ascii=False, separators=(",", ":")) + ";\n")
     for name, text in (("style.css", CSS), ("nav.js", JS)):
         with open(os.path.join(out, name), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
@@ -510,12 +608,13 @@ def main(argv=None):
     missing_files = [(s, t) for s, t, _ in page_links if not os.path.isfile(os.path.join(out, *(t + ".html").split("/")))]
     anchor_keys = {s: {anchor_key(i) for i in ids} for s, ids in page_ids.items()}
     bad_anchors = sorted({(s, t, f) for s, t, f in page_links if f and anchor_key(f) not in anchor_keys.get(t, ())})
-    print(f"페이지 {len(pages)}개 -> {out}")
-    print(f"내부 링크 {len(page_links)}개 변환, 없는 파일 {len(missing_files)}개, 없는 앵커 {len(bad_anchors)}개")
+    print(f"페이지 {len(pages)}개 -> {out}", file=sys.stderr)
+    print(f"내부 링크 {len(page_links)}개 변환, 없는 파일 {len(missing_files)}개, 없는 앵커 {len(bad_anchors)}개", file=sys.stderr)
     for s, t, f in bad_anchors[:10]:
-        print(f"  앵커 없음: {s} -> {t}#{f}")
+        print(f"  앵커 없음: {s} -> {t}#{f}", file=sys.stderr)
     return len(missing_files)
 
 
 if __name__ == "__main__":
+    setup_console()
     sys.exit(1 if main() else 0)

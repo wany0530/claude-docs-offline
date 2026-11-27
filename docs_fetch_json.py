@@ -19,7 +19,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from docs_common import norm, slug
+from docs_common import norm, setup_console, slug
 
 INDEX_URL = "https://code.claude.com/docs/llms.txt"
 LINK_RE = re.compile(r"-\s*\[([^\]]+)\]\((https://code\.claude\.com/docs/[^)\s]+?\.md)\)(?::\s*(.*))?")
@@ -219,4 +219,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    setup_console()
     main()

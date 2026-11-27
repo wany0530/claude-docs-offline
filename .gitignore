@@ -4,3 +4,4 @@ output/
 .claude/settings.local.json
 __pycache__/
 reference/
+logs/
