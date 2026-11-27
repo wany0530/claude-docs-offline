@@ -10,8 +10,9 @@ import docs_verify
 
 
 def article(body, h1=True):
-    return ("<html><body><header><a href=\"nowhere.html#x\">header link is outside the article</a></header>"
-            f"<article>{'<h1 id=\"t\">T</h1>' if h1 else ''}{body}</article></body></html>")
+    title = '<h1 id="t">T</h1>' if h1 else ""  # f-string 식 안에 따옴표·백슬래시를 두면 3.12 미만에서 문법 오류
+    return ('<html><body><header><a href="nowhere.html#x">header link is outside the article</a></header>'
+            f"<article>{title}{body}</article></body></html>")
 
 
 class VerifySite(unittest.TestCase):

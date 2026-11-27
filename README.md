@@ -96,11 +96,20 @@ python docs_json_to_html.py output/history/YYYY-MM-DD.json.gz 새폴더 output/s
 python docs_diff.py 2026-11-20 2026-11-27 ko/hooks
 ```
 
-테스트와 콘솔 인코딩:
+테스트:
 
 ```
-python -m unittest discover tests
+python -m unittest discover tests                              # 단위 테스트 전체 (네트워크 불필요, Node가 있으면 JS 테스트 포함)
+cd tests/e2e && npm ci && npx playwright install chromium && npm test    # 브라우저 E2E (개발용, 아래 설명)
+DOCS_REAL=1 python -m unittest discover tests -p "test_realdata.py"      # 받아 둔 실제 데이터로 불변식 확인 (PowerShell: $env:DOCS_REAL=1)
 ```
+
+- **단위 테스트**(약 110개): 마크다운 변환기, 앵커 확정, 수집기(가짜 네트워크), 빌드 전체(`build_docs_snapshot.main`을 가짜 수집기로 돌려 성공·실패 경로마다 "기존 사이트는 그대로"를 확인), 독립 검증기, 두 언어 사이트 출력. Node가 있으면 `tests/js/`의 `site_src/lib.js` 테스트(`node --test`)와 파이썬·JS 앵커 규칙 비교도 함께 돕니다.
+- **브라우저 E2E**(`tests/e2e`, Chromium, 개발할 때만 필요): 가짜 문서 6쪽으로 만든 고정 사이트를 열어 메뉴·목차·탭·아코디언 이동·검색·복사·구문 강조·모바일 레이아웃을 확인하고, 서버 없이 `file://`로 여는 경우도 확인합니다. 도구 자체는 계속 표준 라이브러리만 씁니다. `@playwright/test`는 1.61.1로 고정돼 있어 Chromium 리비전 1228을 씁니다.
+- **실제 데이터 불변식**: `output/history`가 있을 때만 켜지며(기본은 건너뜀), 없는 파일 0, 한국어 id 일치, 독립 검사 위반 0, 장부에 없는 새 보정 0과 끊김·보정 수의 느슨한 상한(`tests/real_data_limits.json`)을 확인합니다. 업스트림이 바뀌어 새 보정이 생기면 실패하는데, 이는 오류가 아니라 검토 신호입니다.
+- **Python 3.9 이상**이라는 주장은 두 가지로 지킵니다. 3.12 이상 전용 f-string 문법을 토큰으로 찾는 정적 테스트(`tests/test_compat.py`)와, GitHub Actions(`.github/workflows/test.yml`)의 3.9·3.14 매트릭스입니다. 후자는 저장소에 push해야 실제로 돌며, 이 문서를 쓴 시점에는 아직 한 번도 실행되지 않았습니다.
+
+콘솔 인코딩:
 
 스크립트는 시작할 때 콘솔을 UTF-8·줄 단위 버퍼로 바꿔서 한글이 깨지지 않고 출력 순서도 유지됩니다. 오래된 PowerShell 5.1에서 직접 눈으로 볼 때 깨지면 `[Console]::OutputEncoding=[Text.Encoding]::UTF8`을 먼저 실행하세요.
 

@@ -8,30 +8,15 @@ import unittest
 import _path  # noqa: F401
 import docs_anchors
 import docs_json_to_html as conv
-
-
-def page(slug, title, content, category=("Docs", "x", "Group"), ko=None):
-    p = {"category": list(category), "title": title, "url": f"https://code.claude.com/docs/en/{slug}.md",
-         "description": "", "content": content, "assets": {}}
-    p["ko"] = ({"title": ko[0], "description": "", "content": ko[1], "nav_label": ko[0]} if ko else None)
-    return p
-
-
-def read(path):
-    with open(path, encoding="utf-8") as f:
-        return f.read()
+from fixtures import build_site, page, read
 
 
 class Site(unittest.TestCase):
     def build(self, pages, gz=False, **extra):
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
-        src = os.path.join(d.name, "docs.json.gz" if gz else "docs.json")
-        data = {"source": "s", "fetched_at": "2026-01-01", "redirects": {}, "pages": pages, **extra}
-        with (gzip.open(src, "wt", encoding="utf-8") if gz else open(src, "w", encoding="utf-8")) as f:
-            json.dump(data, f)
         out = os.path.join(d.name, "site")
-        return conv.main([src, out]), out
+        return build_site(pages, out, d.name, gz=gz, **extra), out
 
     def two_pages(self):
         return [

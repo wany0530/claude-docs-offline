@@ -1,0 +1,54 @@
+# 자동 테스트. push 와 pull request 마다 실행된다.
+#  - unit: Python 3.9 와 3.14 에서 단위 테스트 전체(Node 테스트, 앵커 파리티 포함). README 의 "Python 3.9 이상" 주장을 실제로 검증한다.
+#  - e2e : Chromium 으로 고정 사이트를 열어 브라우저 동작을 확인한다 (tests/e2e).
+# 주의: 이 파일은 로컬에서 실행해 볼 수 없어 처음 push 한 뒤에야 동작을 확인할 수 있다.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Unit tests (Python + Node + parity)
+        run: python -m unittest discover tests -v
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install Playwright test runner (pinned in package-lock.json)
+        run: npm ci
+        working-directory: tests/e2e
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: tests/e2e
+      - name: Browser tests
+        run: npm test
+        working-directory: tests/e2e
+      - name: Keep traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: tests/e2e/test-results
+          if-no-files-found: ignore
