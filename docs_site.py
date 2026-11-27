@@ -31,14 +31,14 @@ UI_TEXT = {
            "loading": "Loading search index...", "no_index": "Search index not found.",
            "n_match": "{n} page(s) match", "none": "No page contains all words",
            "fallback": "There is no official Korean version of this page, so the original English text is shown.",
-           "close": "Close", "toc": "On this page", "skip": "Skip to content", "sections": "Sections", "pages": "Pages",
+           "close": "Close", "toc": "On this page", "skip": "Skip to content", "sections": "Sections", "pages": "Pages", "changes": "What changed",
            "stale": "The section this link pointed to no longer exists in the source docs; it opens the top of the page."},
     "ko": {"lang_name": "한국어", "search": "검색...", "filter": "페이지 필터...", "toggle": "메뉴 열기",
            "copy_page": "페이지 복사", "copied": "복사됨", "copy": "복사", "snapshot": "스냅샷", "source": "원문",
            "loading": "검색 색인을 불러오는 중...", "no_index": "검색 색인을 찾을 수 없습니다.",
            "n_match": "{n}개 페이지 일치", "none": "모든 단어를 포함한 페이지가 없습니다",
            "fallback": "이 페이지는 공식 한국어판이 없어 영어 원문을 표시합니다.",
-           "close": "닫기", "toc": "이 페이지에서", "skip": "본문으로 건너뛰기", "sections": "섹션", "pages": "페이지",
+           "close": "닫기", "toc": "이 페이지에서", "skip": "본문으로 건너뛰기", "sections": "섹션", "pages": "페이지", "changes": "변경 내역",
            "stale": "이 링크가 가리키던 섹션이 공식 문서에서 이름이 바뀌었거나 사라져, 페이지 처음으로 이동합니다."},
 }
 JS_UI_KEYS = ("filter", "copied", "copy", "loading", "no_index", "n_match", "none", "search", "close", "toc")

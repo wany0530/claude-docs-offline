@@ -32,11 +32,11 @@ def write_snapshot(path, pages, **extra):
     return path
 
 
-def build_site(pages, out_dir, work_dir, gz=False, **extra):
+def build_site(pages, out_dir, work_dir, gz=False, changes=None, **extra):
     """pages 로 변환기를 끝까지 돌려 out_dir 에 사이트를 만든다. (없는 파일 링크 수)를 돌려준다."""
     import docs_json_to_html as conv
     src = write_snapshot(os.path.join(work_dir, "docs.json.gz" if gz else "docs.json"), pages, **extra)
-    return conv.main([src, out_dir])
+    return conv.main([src, out_dir], changes=changes)
 
 
 def read(path):

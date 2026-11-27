@@ -193,12 +193,27 @@ NAV_ORDER = {"Guides": [["g", "Basics"], ["p", "en/guide"], ["s", "More"], ["p",
                         ["g", "Advanced"], ["s", "Deep"]]}
 
 
+def previous_pages():
+    """'이전 스냅샷': more 는 아직 없었고(= 이번에 추가), legacy 는 있었고(= 이번에 삭제), reference 는 본문이 달랐다(= 변경)."""
+    old = [p for p in pages() if p["url"].rsplit("/", 1)[1] != "more.md"]
+    for p in old:
+        if p["url"].endswith("/reference.md"):
+            p["content"] = p["content"].replace("## Reference notes", "## Old reference notes")
+            p["ko"]["content"] = p["ko"]["content"].replace("## 레퍼런스 노트", "## 옛 레퍼런스 노트")
+    old.append(fx.page("legacy", "Legacy page", "# Legacy page\n\nGone now.", category=("Reference", "Reference", "API"),
+                       ko=("옛 페이지", "# 옛 페이지\n\n지금은 없습니다.")))
+    return old
+
+
 def build(out_dir):
     """out_dir 에 고정 사이트를 만든다. (없는 파일 링크 수, 변환기 보고)를 돌려준다."""
     import docs_anchors
+    import docs_changes
     shutil.rmtree(out_dir, ignore_errors=True)
+    changes = docs_changes.change_data(fx.snapshot(previous_pages(), fetched_at="2025-12-01"),
+                                       fx.snapshot(pages(), fetched_at="2026-01-01"), "history/2025-12-01.json.gz")
     with tempfile.TemporaryDirectory() as work:
-        missing = fx.build_site(pages(), out_dir, work, nav_names_ko=NAV_NAMES_KO, nav_order=NAV_ORDER)
+        missing = fx.build_site(pages(), out_dir, work, changes=changes, nav_names_ko=NAV_NAMES_KO, nav_order=NAV_ORDER)
     return missing, dict(docs_anchors.REPORT)
 
 

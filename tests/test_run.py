@@ -80,6 +80,9 @@ class Run(unittest.TestCase):
         self.assertIn("- 결과: 성공", text)
         self.assertIn("## 링크 검증", text)
         self.assertIn("독립 검사(결과 HTML 을 다시 읽음)", text)
+        # 이력이 없는 첫 빌드: 변경 내역 페이지는 있되 비교할 것이 없다고 말한다 (모든 페이지 하단에서 링크)
+        self.assertIn("There is no earlier snapshot", fx.read(os.path.join(site, "en", "changes.html")))
+        self.assertIn('<a href="../en/changes.html">What changed</a>', fx.read(os.path.join(site, "en", "a.html")))
         self.assertIn("위반 0건", text)
         self.assertNotEqual(fx.tree(site), before)
 
@@ -91,6 +94,11 @@ class Run(unittest.TestCase):
         text = self.log()
         self.assertIn("내용 변경 1개", text)
         self.assertIn("A brand new paragraph", fx.read(os.path.join(self.out, "history", TODAY + ".diff")))
+        page = fx.read(os.path.join(self.out, "site", "en", "changes.html"))  # 같은 계산이 사이트의 변경 내역 페이지에도 나온다
+        self.assertIn("Compared with the snapshot of 2026-01-01 (history/2000-01-01.json.gz)", page)
+        self.assertIn('<a href="a.html">Alpha</a>', page)
+        self.assertIn("A brand new paragraph", page)
+        self.assertIn("0 added · 0 removed · 1 changed · 1 unchanged", page)
 
     # ---------- 실패: 기존 사이트는 그대로 ----------
     def test_offline_fails_without_touching_anything(self):

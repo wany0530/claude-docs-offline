@@ -134,6 +134,7 @@ class LogSections(unittest.TestCase):
                            "verify": {"counts": {"pages": 4, "links": 9, "anchors": 7, "stale": 2}, "problems": []},
                            "unreviewed": [("b#fresh", "fresh-long")], "ledger_changed": [("b#moved", "was", "now")],
                            "hints": [("en/a", "en/b", "gone-section", "gone-sections-new"), ("ko/a", "ko/b", "gone-section", "gone-sections-new")]},
+                 "change_lines": ["추가 1개 · 삭제 0개 · 내용 변경 2개 · 변경 없음 3개", ""],
                  "nav_mismatch": ["상단 탭: 영어 8개, 한국어 7개라 짝짓지 못함"],
                  "failures": [("https://x/y.md", "HTTP Error 500 | boom")]}
         with tempfile.TemporaryDirectory() as d:
@@ -143,7 +144,7 @@ class LogSections(unittest.TestCase):
         self.assertIn("## 링크 검증", text)
         self.assertIn("페이지 처음으로 연결 1", text)
         self.assertIn("영어판 고유 1건(링크한 페이지 기준 1곳)", text)
-        self.assertIn("  - en/b#gone (1곳)", text)
+        self.assertIn("- en/b#gone (1곳)", text)
         self.assertNotIn("ko/b#gone", text)  # 목록은 영어판 기준 (한국어는 같은 링크)
         self.assertIn("→ #choose-a-delivery-mechanism", text)
         self.assertIn("독립 검사(결과 HTML 을 다시 읽음): 페이지 4개, 링크 9건(앵커 7건), 끊김 표시 2건 -> 위반 0건", text)
@@ -151,7 +152,10 @@ class LogSections(unittest.TestCase):
         self.assertIn("새 보정: b#fresh → #fresh-long", text)
         self.assertIn("장부와 다름: b#moved 장부 #was / 이번 #now", text)
         self.assertIn("수동 확인 후보 1건", text)  # 영어판 기준 고유 건수 (한국어 중복은 세지 않음)
-        self.assertIn("  - en/b#gone-section ~ #gone-sections-new", text)
+        self.assertIn("- en/b#gone-section ~ #gone-sections-new", text)
+        order = [text.index(h) for h in ("## 수집 실패", "## 변경 요약", "## 링크 검증", "## 링크 상세", "## 이 로그 읽는 법")]
+        self.assertEqual(order, sorted(order))  # 핵심인 변경 요약이 링크 검증보다 앞, 긴 목록은 뒤
+        self.assertLess(len(text.split("## 링크 상세")[0].splitlines()), 40)  # 목록 없이도 앞부분이 한눈에 들어온다
         self.assertIn("## 경고: 한국어 메뉴 이름", text)
         self.assertIn("## 수집 실패", text)
         self.assertIn("| https://x/y.md | HTTP Error 500 / boom |", text)  # 표가 깨지지 않게 | 는 /

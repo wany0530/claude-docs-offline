@@ -13,7 +13,7 @@ for (const scheme of ["light", "dark"]) {
   test.describe(`axe (${scheme} 테마)`, () => {
     test.use({ colorScheme: scheme });
 
-    for (const url of ["/en/guide.html", "/ko/guide.html", "/en/reference.html", "/ko/nokorean.html", "/en/api.html"]) {
+    for (const url of ["/en/guide.html", "/ko/guide.html", "/en/reference.html", "/ko/nokorean.html", "/en/api.html", "/en/changes.html", "/ko/changes.html"]) {
       test(`${url}: WCAG 위반 없음`, async ({ page }) => {
         await page.goto(url);
         expect(await violations(page)).toEqual([]);

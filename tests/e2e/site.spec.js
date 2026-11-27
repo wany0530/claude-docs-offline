@@ -7,12 +7,16 @@ const T = {
     tocTitle: "On this page", filter: "adv", filterHit: "Advanced topic", jsonHeading: "JSON example",
     search: "zebra", hit: "Zebra stripes", none: "No page contains all words", matches: /1 page\(s\) match/,
     copied: "Copied", switchTo: "한국어",
+    changesLink: "What changed", added: /Added pages/, removed: /Removed pages/, changed: /Changed pages/, addedLink: "More details",
+    legacy: "Legacy page", goneSection: "Removed sections: Old reference notes", newSection: "New sections: Reference notes",
   },
   ko: {
     guide: "가이드", tabs: ["가이드", "레퍼런스"], activeTab: "가이드", firstToc: "개요 섹션", lastToc: "긴 섹션 4",
     tocTitle: "이 페이지에서", filter: "고급", filterHit: "고급 주제", jsonHeading: "JSON 예시",
     search: "얼룩말", hit: "얼룩말 줄무늬", none: "모든 단어를 포함한 페이지가 없습니다", matches: /1개 페이지 일치/,
     copied: "복사됨", switchTo: "English",
+    changesLink: "변경 내역", added: /추가된 페이지/, removed: /삭제된 페이지/, changed: /내용이 바뀐 페이지/, addedLink: "더 알아보기",
+    legacy: "옛 페이지", goneSection: "삭제된 섹션: 옛 레퍼런스 노트", newSection: "새 섹션: 레퍼런스 노트",
   },
 };
 
@@ -105,6 +109,24 @@ for (const lang of ["en", "ko"]) {
       await expect(page).toHaveURL(/reference\.html#how-it-works$/);
       await expect(page.locator("details#how-it-works")).toHaveJSProperty("open", true);
       await expect.poll(async () => Math.round((await page.locator("details#how-it-works").boundingBox()).y)).toBeGreaterThan(100);
+    });
+
+    test("변경 내역: 하단 링크, 추가·삭제·변경 목록, 링크 이동, 언어 전환", async ({ page }) => {
+      await page.locator("footer a", { hasText: t.changesLink }).click();
+      await expect(page).toHaveURL(new RegExp(`/${lang}/changes\\.html$`));
+      await expect(page.locator("h1")).toContainText(t.changesLink);
+      await expect(page.locator("article .lead")).toContainText("2025-12-01"); // 비교한 이전 스냅샷의 날짜
+      await expect(page.locator("article h2")).toHaveText([t.added, t.removed, t.changed]);
+      const article = page.locator("article");
+      await expect(article.locator("li", { hasText: t.legacy })).toBeVisible();
+      await expect(article.locator("a", { hasText: t.legacy })).toHaveCount(0); // 삭제된 페이지는 링크가 아니다
+      await expect(article).toContainText(t.goneSection); // 바뀐 페이지의 섹션 변화
+      await expect(article).toContainText(t.newSection);
+      await expect(page.locator("footer a", { hasText: t.changesLink })).toHaveCount(0); // 자기 자신은 링크하지 않는다
+      const other = lang === "en" ? "ko" : "en";
+      await expect(page.locator("details.lang .menu a", { hasText: t.switchTo })).toHaveAttribute("href", `../${other}/changes.html`);
+      await article.locator("a", { hasText: t.addedLink }).first().click(); // 추가된 페이지로 이동
+      await expect(page).toHaveURL(new RegExp(`/${lang}/more\\.html$`));
     });
 
     test("코드 구문 강조: JSON 키는 문자열과 다른 색(tk-key), bash 주석", async ({ page }) => {

@@ -18,14 +18,17 @@ import sys
 
 import docs_diff
 from docs_anchors import REPORT, compare_ledger, load_ledger, resolve_anchors
+from docs_changes import changes_markdown
 from docs_common import ko_url, norm, setup_console
 from docs_markdown import Renderer, attr, esc, plain_text, strip_banner
 from docs_site import (CSS, ICON_COPY, ICON_SEARCH, JS, JS_UI_KEYS, LANGS, PAGE, UI_TEXT, build_nav, crumb_of,
                        make_targets, rest_of, view, write_text)
 
 
-def main(argv=None):
-    """argv: 입력.json(.gz) [출력폴더] [에셋 원본 폴더]. 출력폴더에 assets/ 가 이미 있으면 에셋은 복사하지 않는다."""
+def main(argv=None, changes=None):
+    """argv: 입력.json(.gz) [출력폴더] [에셋 원본 폴더]. 출력폴더에 assets/ 가 이미 있으면 에셋은 복사하지 않는다.
+
+    changes: docs_changes.change_data 결과. 주면 en/changes.html, ko/changes.html 을 만들고 모든 페이지 하단에서 링크한다."""
     argv = sys.argv[1:] if argv is None else argv
     src = argv[0]
     out = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(src)), "site")
@@ -71,23 +74,34 @@ def main(argv=None):
                                  "x": plain_text(content)})
             rendered.append((p, lang, slug, title, content, fallback, r, body))
 
-    report = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set(), "hint": set()}
-    for p, lang, slug, title, content, fallback, r, body in rendered:
-        rest = rest_of(p)
+    def emit(lang, slug, rest, title, body, md_text, crumbs, notice, url):
+        """페이지 틀(PAGE)에 채워 <출력폴더>/<slug>.html 로 쓴다. 일반 페이지와 변경 내역 페이지가 함께 쓴다."""
         ui = UI_TEXT[lang]
-        body = resolve_anchors(slug, body, r.links, page_ids, ui["stale"], report)
         root = "../" * slug.count("/")
-        url = norm(p["url"] if lang == "en" or fallback else ko_url(p["url"]))
-        md = json.dumps("\n".join(strip_banner(content)), ensure_ascii=False).replace("<", "\\u003c")
+        md = json.dumps(md_text, ensure_ascii=False).replace("<", "\\u003c")
+        link = f' &middot; <a href="{root}{lang}/changes.html">{esc(ui["changes"])}</a>' if changes and slug != f"{lang}/changes" else ""
         write_text(os.path.join(out, *(slug + ".html").split("/")), PAGE.substitute(
-            lang=lang, title=esc(title), root=root, slug=slug, body=body, md=md,
-            crumbs=esc(crumb_of(p, lang, names_ko)),
-            notice=f'<div class="notice">{esc(ui["fallback"])}</div>\n' if fallback else "",
+            lang=lang, title=esc(title), root=root, slug=slug, body=body, md=md, crumbs=crumbs, notice=notice,
             en_href=f"{root}en/{rest}.html", ko_href=f"{root}ko/{rest}.html", url=attr(url),
-            fetched=snap.get("fetched_at", ""), icon_search=ICON_SEARCH, icon_copy=ICON_COPY,
+            fetched=snap.get("fetched_at", ""), changes_link=link, icon_search=ICON_SEARCH, icon_copy=ICON_COPY,
             t_lang=ui["lang_name"], t_toggle=ui["toggle"], t_search=ui["search"], t_copy_page=ui["copy_page"],
             t_skip=ui["skip"], t_sections=ui["sections"], t_pages=ui["pages"], t_toc=ui["toc"],
             t_source=ui["source"], t_snapshot=ui["snapshot"]))
+
+    report = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set(), "hint": set()}
+    for p, lang, slug, title, content, fallback, r, body in rendered:
+        ui = UI_TEXT[lang]
+        body = resolve_anchors(slug, body, r.links, page_ids, ui["stale"], report)
+        url = norm(p["url"] if lang == "en" or fallback else ko_url(p["url"]))
+        emit(lang, slug, rest_of(p), title, body, "\n".join(strip_banner(content)), esc(crumb_of(p, lang, names_ko)),
+             f'<div class="notice">{esc(ui["fallback"])}</div>\n' if fallback else "", url)
+
+    if changes:  # 직전 이력과 비교한 '변경 내역' 페이지 (사이드바·검색 색인에는 넣지 않는다)
+        assert all(rest_of(p) != "changes" for p in pages), "'changes' 라는 문서 페이지가 있어 변경 내역 페이지와 겹칩니다"
+        for lang in LANGS:
+            md_text = changes_markdown(changes, lang)
+            body = Renderer(f"{lang}/changes", targets[lang], {}).render(md_text)
+            emit(lang, f"{lang}/changes", "changes", UI_TEXT[lang]["changes"], body, md_text, "", "", "https://code.claude.com/docs")
 
     for lang in LANGS:
         ui = {k: UI_TEXT[lang][k] for k in JS_UI_KEYS}
