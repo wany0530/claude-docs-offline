@@ -11,10 +11,10 @@ from unittest import mock
 
 import _path  # noqa: F401
 import docsnap.site.anchors as docs_anchors
-import docs_fetch_json as f
-import docs_json_to_html as conv
+import docsnap.fetch as f
+import docsnap.site.convert as conv
 import docsnap.site.parts as docs_site
-import docs_verify
+import docsnap.site.verify as docs_verify
 import fixtures as fx
 
 
@@ -148,7 +148,8 @@ class FetchFailures(unittest.TestCase):
                 if url.endswith("broken.md"):
                     raise OSError("connection reset")
                 return url, "text/markdown", "# Overview\n\n![p](https://mintcdn.com/x/pic.png)"
-            return url, "text/html", ""  # 사이트 HTML: 메뉴 정보 없음
+            return url, "text/html", ('<a class="nav-tabs-item group">G</a><li id="/en/overview" data-title="Overview"></li>'
+                                      '<li id="/en/broken" data-title="Broken"></li>')  # 사이트 HTML: 메뉴 정보
 
         with tempfile.TemporaryDirectory() as d:
             out, err = os.path.join(d, "docs.json"), io.StringIO()

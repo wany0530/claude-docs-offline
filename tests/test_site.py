@@ -7,7 +7,7 @@ import unittest
 
 import _path  # noqa: F401
 import docsnap.site.anchors as docs_anchors
-import docs_json_to_html as conv
+import docsnap.site.convert as conv
 from fixtures import build_site, page, read
 
 

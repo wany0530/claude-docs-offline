@@ -9,7 +9,7 @@ import urllib.error
 from unittest import mock
 
 import _path  # noqa: F401
-import docs_fetch_json as f
+import docsnap.fetch as f
 
 EN = "https://code.claude.com/docs/en/"
 KO = "https://code.claude.com/docs/ko/"
@@ -69,6 +69,7 @@ NAV_HTML = {
            '<button class="nav-tabs-item group"><div>Plugins</div></button>'
            '<div class="sidebar-group-header z"><h5>Core concepts</h5></div>'
            '<li id="/en/overview" class="a" data-title="Overview"></li>'
+
            '<li data-title="Claude Code in the cloud" data-group-tag="" class="space-y-px">'),
     "ko": ('<a class="x nav-tabs-item group y">시작하기<div></div></a>'
            '<a class="nav-tabs-item group">플러그인</a>'
@@ -260,6 +261,7 @@ class DownloadAssets(unittest.TestCase):
 
 NAV_EN = NAV_HTML["en"]
 NAV_KO = NAV_HTML["ko"]
+NAV_FULL = NAV_EN + '<li id="/en/quickstart" class="a" data-title="Quickstart"></li>'  # 두 페이지 모두 메뉴 이름이 있는 사이트
 
 
 SIDEBAR_HTML = (
@@ -292,6 +294,10 @@ class ParseNavOrder(unittest.TestCase):
 class FetchMain(unittest.TestCase):
     """수집기 전체(main)를 가짜 사이트로 끝까지 돌린다: 목차 읽기 -> 영어 -> 한국어 -> 메뉴 이름 -> 에셋 -> JSON."""
 
+    def site_with(self, en_nav):
+        fake = self.site()
+        return lambda url: fake(url) if not url.endswith(("/en/overview", "/en/quickstart")) else (url, "text/html", en_nav)
+
     def site(self, ko_nav=NAV_KO):
         pic = "https://mintcdn.com/x/pic.png"
         table = {
@@ -300,7 +306,7 @@ class FetchMain(unittest.TestCase):
             EN + "quickstart.md": "# Quickstart\n\n> q",
             KO + "overview.md": "# 개요\n\n> 설명\n\n![그림](" + pic + ")",
             KO + "quickstart.md": urllib.error.HTTPError(KO + "quickstart.md", 404, "nf", {}, io.BytesIO()),
-            EN + "overview": NAV_EN, EN + "quickstart": NAV_EN, KO + "overview": ko_nav,
+            EN + "overview": NAV_FULL, EN + "quickstart": NAV_FULL, KO + "overview": ko_nav,
         }
 
         def fake_open(url):
@@ -338,6 +344,12 @@ class FetchMain(unittest.TestCase):
         self.assertEqual(ov["assets"], {"https://mintcdn.com/x/pic.png": next("assets/" + n for n in os.listdir(assets))})
         self.assertIn("저장 완료", err)
         self.assertIn("한국어판 없음: en/quickstart", err)
+
+    def test_menu_html_that_no_longer_matches_the_scrapers_fails_the_build(self):
+        broken = NAV_FULL.replace("nav-tabs-item", "renamed-item").replace("sidebar-group-header", "renamed-header")             .replace('data-title="Overview"', 'data-name="Overview"').replace('data-title="Quickstart"', 'data-name="Quickstart"')
+        with self.assertRaises(RuntimeError) as cm:
+            self.run_main(self.site_with(broken))
+        self.assertIn("Getting started", str(cm.exception))
 
     def test_menu_that_cannot_be_paired_is_reported_not_guessed(self):
         ko_without_groups = NAV_KO.replace('<div class="sidebar-group-header z"><h5>핵심 개념</h5></div>', "")

@@ -9,8 +9,8 @@ from unittest import mock
 
 import _path  # noqa: F401
 import docsnap.common as docs_common
-import docs_diff
-import docs_fetch_json as f
+import docsnap.history.diff as docs_diff
+import docsnap.fetch as f
 import fixtures as fx
 
 
@@ -135,6 +135,20 @@ class Network(unittest.TestCase):
             with self.assertRaises(OSError):
                 f.get("https://x/p.md")
         self.assertEqual(op.call_count, 3)
+
+    def test_a_404_is_not_retried_but_a_500_and_a_429_are(self):
+        def http(code):
+            return urllib.error.HTTPError("https://x/p.md", code, "e", {}, io.BytesIO())
+
+        for code, calls in ((404, 1), (403, 1), (500, 3), (429, 3)):
+            with mock.patch.object(f, "_open", side_effect=http(code)) as op, mock.patch.object(f.time, "sleep"):
+                with self.assertRaises(urllib.error.HTTPError):
+                    f.get("https://x/p.md")
+            self.assertEqual(op.call_count, calls, code)
+        with mock.patch.object(f.urllib.request, "urlopen", side_effect=http(404)) as op, mock.patch.object(f.time, "sleep"):
+            with self.assertRaises(urllib.error.HTTPError):
+                f.get_bytes("https://x/a.png")
+        self.assertEqual(op.call_count, 1)
 
     def test_html_for_a_md_url_is_retried_once_at_the_final_address(self):
         calls = []

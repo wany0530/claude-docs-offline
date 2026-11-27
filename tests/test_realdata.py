@@ -12,9 +12,9 @@ import unittest
 
 import _path  # noqa: F401
 import docsnap.site.anchors as docs_anchors
-import docs_diff
-import docs_json_to_html as conv
-import docs_verify
+import docsnap.history.diff as docs_diff
+import docsnap.site.convert as conv
+import docsnap.site.verify as docs_verify
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 HISTORY = sorted(glob.glob(os.path.join(ROOT, "output", "history", "*.json.gz")))

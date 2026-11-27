@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 import _path  # noqa: F401
-import docs_verify
+import docsnap.site.verify as docs_verify
 from fixtures import read
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "e2e"))

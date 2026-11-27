@@ -10,7 +10,7 @@ from datetime import date
 from unittest import mock
 
 import _path  # noqa: F401
-import build_docs_snapshot as b
+import docsnap.build as b
 import fixtures as fx
 
 TODAY = date.today().isoformat()

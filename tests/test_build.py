@@ -6,8 +6,8 @@ import unittest
 from unittest import mock
 
 import _path  # noqa: F401
-import build_docs_snapshot as b
-import docs_diff
+import docsnap.build as b
+import docsnap.history.diff as docs_diff
 
 
 def page(slug, content, title=None, desc=""):

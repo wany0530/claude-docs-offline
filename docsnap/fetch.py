@@ -41,6 +41,11 @@ def _open(url):
         return r.geturl(), r.headers.get("content-type", ""), r.read().decode("utf-8")
 
 
+def _retryable(e):
+    """404 같은 4xx 는 다시 요청해도 같은 답이 오므로 재시도하지 않는다 (408·429 는 일시적이라 재시도)."""
+    return not (isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500 and e.code not in (408, 429))
+
+
 def get(url, retries=3):
     for attempt in range(retries):
         try:
@@ -51,8 +56,8 @@ def get(url, retries=3):
                 if "text/html" in ctype:
                     raise ValueError("markdown 대신 HTML 반환: " + final)
             return body
-        except Exception:
-            if attempt == retries - 1:
+        except Exception as e:
+            if attempt == retries - 1 or not _retryable(e):
                 raise
             time.sleep(2 ** attempt)
 
@@ -62,8 +67,8 @@ def get_bytes(url, retries=3):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
                 return r.read()
-        except Exception:
-            if attempt == retries - 1:
+        except Exception as e:
+            if attempt == retries - 1 or not _retryable(e):
                 raise
             time.sleep(2 ** attempt)
 
@@ -196,6 +201,24 @@ def add_nav_labels(pages, lang="en"):
     return labels, tabs, groups, subs, fallback, orders
 
 
+def nav_health(pages, tabs, labels, orders):
+    """HTML 메뉴 읽기가 조용히 망가졌는지 llms.txt(독립된 출처)와 맞춰 본다. 문제 문장 목록을 돌려준다(없으면 빈 목록).
+
+    공식 사이트가 CSS 클래스 이름만 바꿔도 정규식은 빈 결과를 내고 빌드는 성공하므로, 메뉴 이름·순서가 틀어진 사이트가 만들어진다."""
+    listed = [p for p in pages if p["category"][0] != "_unlisted"]
+    want = list(dict.fromkeys(p["category"][0] for p in listed))
+    problems = []
+    if set(want) - set(tabs):
+        problems.append(f"사이트 HTML 에서 못 찾은 상단 탭: {sorted(set(want) - set(tabs))}")
+    empty = [t for t in want if not any(k == "p" for k, _ in orders.get(t, []))]
+    if empty:
+        problems.append(f"사이드바 순서를 읽지 못한 탭: {empty}")
+    named = sum(slug(p["url"]) in labels for p in listed)
+    if listed and named < 0.9 * len(listed):
+        problems.append(f"메뉴 이름을 찾은 페이지가 {named}/{len(listed)}개뿐")
+    return problems
+
+
 def fetch_korean(pages):
     """각 페이지의 공식 한국어판(/docs/ko/<slug>.md)을 받아 p["ko"] 에 저장한다 (번역이 아니라 공식 원문).
 
@@ -211,6 +234,8 @@ def fetch_korean(pages):
                 if e.code == 404:
                     return None, None
                 err = str(e)
+                if not _retryable(e):
+                    break
             except Exception as e:
                 err = str(e)
             else:
@@ -313,6 +338,9 @@ def main(argv=None):
     redirects, unresolved, endpoints = resolve_links(pages)
     fetch_korean(pages)
     en_labels, en_tabs, en_groups, en_subs, no_label, nav_order = add_nav_labels(pages)
+    bad_nav = nav_health(pages, en_tabs, en_labels, nav_order)
+    if bad_nav:
+        raise RuntimeError("공식 사이트 메뉴 HTML 을 읽지 못했습니다(사이트 구조가 바뀐 듯함): " + "; ".join(bad_nav))
     ko_labels, ko_tabs, ko_groups, ko_subs, *_ = add_nav_labels(pages, "ko")
     nav_problems = []
     nav_names_ko = korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs, nav_problems)

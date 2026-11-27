@@ -6,7 +6,7 @@ import unittest
 
 import _path  # noqa: F401
 import docsnap.site.anchors as anchors
-import docs_verify
+import docsnap.site.verify as docs_verify
 
 
 def article(body, h1=True):

@@ -1,9 +1,4 @@
-"""호환용: 실제 코드는 docsnap/history/diff.py (같은 모듈 객체를 돌려주므로 import·mock·명령줄 모두 기존과 동일)."""
-import sys
+"""명령줄 실행용 짧은 진입점. 실제 코드는 docsnap/history/diff.py."""
+import runpy
 
-if __name__ == "__main__":
-    import runpy
-    runpy.run_module("docsnap.history.diff", run_name="__main__")
-else:
-    import importlib
-    sys.modules[__name__] = importlib.import_module("docsnap.history.diff")
+runpy.run_module("docsnap.history.diff", run_name="__main__")

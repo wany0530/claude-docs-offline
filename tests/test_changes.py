@@ -5,7 +5,7 @@ import unittest
 
 import _path  # noqa: F401
 import docsnap.history.changes as dc
-import docs_verify
+import docsnap.site.verify as docs_verify
 import fixtures as fx
 
 
@@ -126,7 +126,7 @@ class ChangesPageInSite(unittest.TestCase):
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
         out = os.path.join(d.name, "site")
-        import docs_json_to_html as conv
+        import docsnap.site.convert as conv
         src = fx.write_snapshot(os.path.join(d.name, "docs.json"), NEW["pages"], fetched_at="2026-01-08")
         self.assertEqual(conv.main([src, out], changes=changes), 0)
         return out
