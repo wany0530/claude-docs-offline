@@ -211,17 +211,23 @@ def fetch_korean(pages):
         list(ex.map(work, pages))
 
 
-def korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs):
-    """영어 메뉴 이름 -> 한국어 사이트가 쓰는 같은 자리의 이름. 탭·그룹·하위 그룹 이름을 번역 없이 공식 사이트에서 짝지어 얻는다."""
+def korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs, problems=None):
+    """영어 메뉴 이름 -> 한국어 사이트가 쓰는 같은 자리의 이름. 탭·그룹·하위 그룹 이름을 번역 없이 공식 사이트에서 짝지어 얻는다.
+
+    개수가 달라 짝짓지 못한 목록은 추측하지 않고 건너뛰며, 건너뛴 사실을 problems(리스트)에 문장으로 남긴다."""
     names = {}
     if len(en_tabs) == len(ko_tabs):
         names.update(zip(en_tabs, ko_tabs))
-    for en_map, ko_map in ((en_groups, ko_groups), (en_subs, ko_subs)):  # 같은 탭의 첫 페이지에서 같은 순서로 나오는 이름끼리
+    elif problems is not None:
+        problems.append(f"상단 탭: 영어 {len(en_tabs)}개, 한국어 {len(ko_tabs)}개라 짝짓지 못함")
+    for kind, en_map, ko_map in (("그룹", en_groups, ko_groups), ("하위 그룹", en_subs, ko_subs)):  # 같은 탭의 첫 페이지에서 같은 순서로 나오는 이름끼리
         for tab, en_g in en_map.items():
             ko_g = ko_map.get(tab, [])
             if len(en_g) == len(ko_g):
                 for a, b in zip(en_g, ko_g):
                     names.setdefault(a, b)
+            elif problems is not None:
+                problems.append(f"{tab} 탭의 {kind}: 영어 {len(en_g)}개, 한국어 {len(ko_g)}개라 짝짓지 못함")
     for key, en_name in en_labels.items():  # 같은 slug 의 메뉴 항목(하위 그룹 포함): en/X <-> ko/X
         ko_name = ko_labels.get("ko/" + key[3:])
         if ko_name:
@@ -285,7 +291,8 @@ def main(argv=None):
     fetch_korean(pages)
     en_labels, en_tabs, en_groups, en_subs, no_label = add_nav_labels(pages)
     ko_labels, ko_tabs, ko_groups, ko_subs, _ = add_nav_labels(pages, "ko")
-    nav_names_ko = korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs)
+    nav_problems = []
+    nav_names_ko = korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs, nav_problems)
     n_assets, asset_errors = download_assets(pages, assets_dir)
 
     failed = [p["url"] for p in pages if p["content"] is None]
@@ -296,6 +303,7 @@ def main(argv=None):
         "page_count": len(pages),
         "languages": ["en", "ko"],  # ko = 공식 한국어판 원문(번역 아님). 한국어판이 없는 페이지는 p["ko"] 가 null
         "nav_names_ko": nav_names_ko,  # 영어 탭·그룹 이름 -> 한국어 사이트의 같은 이름
+        "nav_name_mismatch": nav_problems,  # 개수가 달라 짝짓지 못한 메뉴 이름 목록 (있으면 한국어 메뉴에 영어 이름이 남음)
         "ko_errors": ko_failed,
         "redirects": redirects,  # 본문 링크(.md·# 제거) -> 실제 수집된 페이지 url
         "unresolved_links": unresolved,
@@ -320,6 +328,8 @@ def main(argv=None):
         print("  확인 필요:", u, "-", e, file=sys.stderr)
     for t in no_label:
         print("  메뉴 이름 없음:", t, file=sys.stderr)
+    for msg in nav_problems:
+        print("  경고: 한국어 메뉴 이름", msg, file=sys.stderr)
     for u, e in ko_failed.items():
         print("  한국어판 수집 실패:", u, "-", e, file=sys.stderr)
     for p in pages:

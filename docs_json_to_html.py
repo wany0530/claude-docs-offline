@@ -10,6 +10,7 @@
 본문 마크다운 -> HTML 변환기를 직접 구현했고, docs 사이트 내부 링크는 상대 경로로 바꿉니다. 한국어는 번역이 아니라
 공식 한국어판(/docs/ko/) 원문입니다. 표준 라이브러리만 사용.
 """
+import collections
 import html
 import json
 import os
@@ -87,16 +88,20 @@ def indent_of(line):
 class Renderer:
     """페이지 1개를 HTML 로 변환. slug 는 'en/agent-sdk/mcp' 형태."""
 
-    def __init__(self, slug, targets, assets, hint=None):
+    def __init__(self, slug, targets, assets, hint=None, acc_hint=None, defer_anchors=False):
         """hint: 같은 페이지 다른 언어판의 [(헤딩 레벨, id), ...]. 주면 헤딩 id 를 그대로 빌려 쓴다
-        (공식 한국어판 본문의 링크도 영어판 앵커를 쓰기 때문). 레벨이 어긋나면 그 지점부터는 기본 규칙으로 돌아간다."""
+        (공식 한국어판 본문의 링크도 영어판 앵커를 쓰기 때문). 레벨이 어긋나면 그 지점부터는 기본 규칙으로 돌아간다.
+        acc_hint: 같은 방식으로 빌려 쓰는 아코디언 id 목록 [id, ...] (헤딩과 따로 순서를 센다)."""
         self.slug, self.targets = slug, targets
         self.assets = {k.replace("\\&", "&"): v for k, v in assets.items()}
         self.ids, self.used_ids = {}, set()
-        self.links = []  # (대상 slug, 앵커) — 나중에 앵커 검사용
+        self.links = []  # (대상 slug, 앵커) — 나중에 앵커 검사용. 앵커가 있는 링크는 href 에 \x01번호\x01 표시가 들어가고 resolve_anchors 가 채운다
         self.heads = []  # (헤딩 글자, id) — 본문 검색 결과에서 해당 위치로 이동하기 위함
         self.head_ids = []  # (헤딩 레벨, id) — 다른 언어판이 id 를 빌려 가기 위함
+        self.acc_ids = []  # 아코디언 id (문서 순서) — 다른 언어판이 빌려 가기 위함
         self.hint, self.hint_pos, self.tab_n, self.lead_done = (list(hint) if hint else None), 0, 0, False
+        self.acc_hint, self.acc_pos = (list(acc_hint) if acc_hint else None), 0
+        self.defer_anchors = defer_anchors  # True 면 앵커가 있는 링크를 \x01번호\x01 로 남겨 둔다 (resolve_anchors 용)
 
     # ---------- 주소 ----------
     def rel(self, path):
@@ -110,8 +115,11 @@ class Renderer:
         if m:
             target = self.targets.get(norm(m.group(1)))
             if target:
-                self.links.append((target, (m.group(2) or "")[1:]))
-                return self.rel(target + ".html") + (m.group(2) or "")
+                frag = (m.group(2) or "")[1:]
+                self.links.append((target, frag))
+                if frag and self.defer_anchors:  # 앵커는 모든 페이지의 id 가 정해진 뒤 resolve_anchors 에서 실제 id 로 확정한다
+                    return f"\x01{len(self.links) - 1}\x01"
+                return self.rel(target + ".html") + (f"#{frag}" if frag else "")
         return u
 
     # ---------- 인라인 ----------
@@ -177,12 +185,30 @@ class Renderer:
                 self.head_ids.append((level, hid))
                 return hid
             self.hint = None  # 어긋남: 나머지는 기본 규칙
+        hid = self.unique_id(text)
+        self.head_ids.append((level, hid))
+        return hid
+
+    def unique_id(self, text):
+        """제목 글자 -> 페이지 안에서 겹치지 않는 id (헤딩과 아코디언이 같은 규칙·같은 번호 공간을 쓴다)."""
         base = heading_slug(text) or "section"
         n = self.ids.get(base, -1) + 1
         self.ids[base] = n
         hid = base if n == 0 else f"{base}-{n}"
         self.used_ids.add(hid)
-        self.head_ids.append((level, hid))
+        return hid
+
+    def accordion_id(self, text):
+        if self.acc_hint is not None:
+            if self.acc_pos < len(self.acc_hint):
+                hid = self.acc_hint[self.acc_pos]
+                self.acc_pos += 1
+                self.used_ids.add(hid)
+                self.acc_ids.append(hid)
+                return hid
+            self.acc_hint = None  # 어긋남: 나머지는 기본 규칙
+        hid = self.unique_id(text)
+        self.acc_ids.append(hid)
         return hid
 
     def tab_group(self, tabs):
@@ -359,7 +385,9 @@ class Renderer:
                     out.append(self.tab_group(tabs))
                     continue
                 if mk and mk.group(1) == "accordion":
-                    out.append(f'<details class="accordion"><summary>{self.inline(mk.group(2) or "")}</summary>'
+                    title = self.inline(mk.group(2) or "")
+                    aid = self.accordion_id(title)  # 제목이 같은 slug 규칙의 id: 본문 링크(#제목)가 아코디언을 가리킨다
+                    out.append(f'<details class="accordion" id="{aid}"><summary>{title}</summary>'
                                f"{self.blocks(inner[1:])}</details>")
                     continue
                 if mk:  # card: 연속된 카드는 격자로 묶는다
@@ -434,15 +462,17 @@ UI_TEXT = {
            "loading": "Loading search index...", "no_index": "Search index not found.",
            "n_match": "{n} page(s) match", "none": "No page contains all words",
            "fallback": "There is no official Korean version of this page, so the original English text is shown.",
-           "close": "Close"},
+           "close": "Close", "toc": "On this page",
+           "stale": "The section this link pointed to no longer exists in the source docs; it opens the top of the page."},
     "ko": {"lang_name": "한국어", "search": "검색...", "filter": "페이지 필터...", "toggle": "메뉴 열기",
            "copy_page": "페이지 복사", "copied": "복사됨", "copy": "복사", "snapshot": "스냅샷", "source": "원문",
            "loading": "검색 색인을 불러오는 중...", "no_index": "검색 색인을 찾을 수 없습니다.",
            "n_match": "{n}개 페이지 일치", "none": "모든 단어를 포함한 페이지가 없습니다",
            "fallback": "이 페이지는 공식 한국어판이 없어 영어 원문을 표시합니다.",
-           "close": "닫기"},
+           "close": "닫기", "toc": "이 페이지에서",
+           "stale": "이 링크가 가리키던 섹션이 공식 문서에서 이름이 바뀌었거나 사라져, 페이지 처음으로 이동합니다."},
 }
-JS_UI_KEYS = ("filter", "copied", "copy", "loading", "no_index", "n_match", "none", "search", "close")
+JS_UI_KEYS = ("filter", "copied", "copy", "loading", "no_index", "n_match", "none", "search", "close", "toc")
 
 
 class Group:
@@ -546,6 +576,7 @@ PAGE = """<!doctype html>
 {body}
 <footer>{t_source}: <a href="{url}">{url}</a> &middot; {t_snapshot} {fetched}</footer>
 </article></main>
+<aside id="toc"></aside>
 </div>
 <script type="application/json" id="md-src">{md}</script>
 <script src="{root}nav-data-{lang}.js"></script><script src="{root}nav.js"></script>
@@ -594,7 +625,15 @@ kbd{font:600 12px var(--sans);color:var(--mut);border:1px solid var(--line);bord
 #nav details.sub>summary:hover{background:var(--side);opacity:1}
 #nav .subbox{margin-left:12px;border-left:1px solid var(--line)}
 main{flex:1;min-width:0;padding:34px 48px 96px}
-article{position:relative;max-width:760px;margin:0 auto}
+article{position:relative;max-width:800px;margin:0 auto}
+#toc{position:sticky;top:116px;flex:none;width:250px;height:calc(100vh - 116px);overflow-y:auto;padding:34px 12px 48px 8px;font-size:13.5px;line-height:1.4}
+#toc[hidden]{display:none}
+#toc h6{margin:0 0 10px;padding-left:14px;font-size:13px;font-weight:600;color:var(--fg)}
+#toc ul{list-style:none;margin:0;padding:0;border-left:1px solid var(--line)}
+#toc li a{display:block;margin-left:-1px;padding:5px 12px;border-left:2px solid transparent;color:var(--mut);text-decoration:none}
+#toc li.l3 a{padding-left:26px}
+#toc li a:hover{color:var(--fg)}#toc li a[aria-current]{color:var(--fg);font-weight:600;border-left-color:var(--fg)}
+article:lang(ko){word-break:keep-all;overflow-wrap:break-word}
 .crumbs{color:var(--fg);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.02em}
 .notice{margin:.8em 0;padding:.6em 1em;border:1px solid var(--line);border-radius:12px;background:var(--side);color:var(--mut);font-size:14px}
 #copypage{position:absolute;right:0;top:22px;display:flex;align-items:center;gap:8px;height:38px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);font-size:14px;font-weight:500;cursor:pointer}
@@ -607,6 +646,7 @@ h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor{opacity:1}
 article a{color:var(--link)}
 article p a,article li a,article td a,article summary a,.card-title a{font-weight:600;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}
 article a.anchor{font-weight:400;text-decoration:none}
+article a.stale-anchor{text-decoration-style:dotted;cursor:help}
 code{background:var(--code);padding:.12em .4em;border-radius:6px;font:.88em var(--mono)}
 pre{position:relative;background:var(--pre);border:1px solid var(--line);padding:16px 18px;border-radius:16px;overflow:auto;line-height:1.55;margin:1.2em 0}
 pre code{background:none;padding:0;font-size:.86em}
@@ -635,6 +675,7 @@ details.accordion[open]{padding-bottom:6px}
 .card-title a::after{content:"";position:absolute;inset:0}.card p{margin:.2em 0;color:var(--mut);font-size:15px}
 .table-wrap{overflow-x:auto;margin:1.2em 0}table{border-collapse:collapse;width:100%}
 th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;vertical-align:top}th{background:var(--side)}
+td:first-child,th:first-child{min-width:7.5em}
 img,video{max-width:100%;height:auto;border-radius:10px}hr{border:0;border-top:1px solid var(--line);margin:2em 0}
 footer{margin-top:4em;padding-top:1em;border-top:1px solid var(--line);color:var(--mut);font-size:13px}
 mark{background:#fde68a;color:#1f1e1d;border-radius:2px;padding:0 1px}
@@ -648,6 +689,7 @@ mark{background:#fde68a;color:#1f1e1d;border-radius:2px;padding:0 1px}
 #results .info{color:var(--mut);font-size:13px;padding:6px 14px}
 .tk-c{color:#6b7280;font-style:italic}.tk-s{color:#15803d}.tk-n{color:#b45309}.tk-k{color:#7c3aed;font-weight:600}.tk-key{color:#1d4ed8}
 @media (prefers-color-scheme:dark){.tk-c{color:#9ca3af}.tk-s{color:#86efac}.tk-n{color:#fbbf24}.tk-k{color:#c4b5fd}.tk-key{color:#93c5fd}}
+@media (max-width:1240px){#toc{display:none}}
 @media (max-width:1000px){main{padding:26px 22px 80px}h1{padding-right:0;font-size:2rem}#copypage{position:static;margin:.6em 0 0}}
 @media (max-width:900px){#navtoggle{display:block}.logo .offline{display:none}.logo{font-size:22px}.logo .star{font-size:24px}#top{gap:12px;padding:0 12px}#tabs{padding:0 12px}
 #searchbtn{width:auto;margin-left:auto;padding:0 12px}#searchbtn span,#searchbtn kbd{display:none}
@@ -701,6 +743,20 @@ function goHash(){var h=location.hash.slice(1);if(!h)return;var t;try{t=document
  if(!t){var k=anchorKey(h),c=document.querySelectorAll("article [id]");for(var i=0;i<c.length;i++){if(anchorKey(c[i].id)===k){t=c[i];break}}}
  if(t){reveal(t);t.scrollIntoView()}}
 window.addEventListener("hashchange",goHash);goHash();
+
+/* ---- 우측 목차 (이 페이지에서) ---- */
+var toc=document.getElementById("toc");
+if(toc){var hs=Array.prototype.filter.call(document.querySelectorAll("article h2[id],article h3[id]"),function(h){return !h.closest(".tab-panel,details")});
+ if(hs.length<2){toc.hidden=true}
+ else{toc.appendChild(el("h6",null,T.toc||"On this page"));var ul=el("ul"),links=[];
+  hs.forEach(function(h){var c=h.cloneNode(true),a0=c.querySelector(".anchor");if(a0)a0.remove();
+   var li=el("li",h.tagName==="H3"?"l3":"l2"),a=el("a",null,c.textContent.trim());a.href="#"+h.id;li.appendChild(a);ul.appendChild(li);links.push(a)});
+  toc.appendChild(ul);
+  var tick=false;function spy(){tick=false;var cur=0;for(var i=0;i<hs.length;i++){if(hs[i].getBoundingClientRect().top<=150)cur=i;else break}
+   if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)cur=hs.length-1;
+   links.forEach(function(a,i){if(i===cur)a.setAttribute("aria-current","true");else a.removeAttribute("aria-current")});
+   var on=links[cur];if(on){var r=on.getBoundingClientRect(),t=toc.getBoundingClientRect();if(r.top<t.top+40||r.bottom>t.bottom-20)toc.scrollTop+=r.top-t.top-t.height/2}}
+  window.addEventListener("scroll",function(){if(!tick){tick=true;requestAnimationFrame(spy)}},{passive:true});spy()}}
 
 /* ---- 페이지 복사, 코드 복사 ---- */
 var cp=document.getElementById("copypage"),src=document.getElementById("md-src");
@@ -785,6 +841,72 @@ document.querySelectorAll("pre[data-lang]").forEach(function(pre){var cfg=L[(pre
 """
 
 
+def _tokens(s):
+    """앵커·id 를 단어 집합으로 (소문자, 끝의 복수 s 만 정규화). 단어 일치 보정에 쓴다."""
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in re.findall(r"\w+", urllib.parse.unquote(s).lower())}
+
+
+def resolve_anchor(frag, ids):
+    """링크의 앵커 frag 를 대상 페이지의 실제 id 집합 ids 에 맞춰 확정한다. (분류, 쓸 앵커)를 돌려준다.
+
+    exact: 그대로 있음 / key: 구두점·대소문자만 달라 실제 id 로 바꿈 /
+    strict: 앵커의 모든 단어를 포함하는 id 가 **정확히 하나**일 때만 그 id (업스트림 제목이 길어진 경우) /
+    stale: 어느 것도 아님 (원문에서 이름이 바뀌었거나 사라진 섹션. 페이지 처음으로 연결한다)."""
+    if frag in ids or urllib.parse.unquote(frag) in ids:
+        return "exact", frag
+    key = anchor_key(frag)
+    same = sorted(i for i in ids if anchor_key(i) == key)
+    if same:
+        return "key", same[0]
+    want = _tokens(frag)
+    if want:
+        cand = sorted(i for i in ids if want <= _tokens(i))
+        if len(cand) == 1:
+            return "strict", cand[0]
+    return "stale", ""
+
+
+DEFERRED = re.compile(r'href="\x01(\d+)\x01"')
+LOCAL_ANCHOR = re.compile(r'(<a\s[^>]*?)href="#([^"]+)"')  # 같은 페이지 안의 #앵커 링크 (코드 예시 속 글자는 &lt;a 라 걸리지 않음)
+
+
+def resolve_anchors(slug, body, links, page_ids, stale_title, report):
+    """본문의 앵커 링크를 실제 id 로 확정한다 (다른 페이지로 가는 링크 + 같은 페이지 안의 #링크).
+    확정 결과는 report 에 센다. 끊긴 링크(stale)에는 class="stale-anchor" 와 안내 title 을 붙이고 앵커를 뺀다."""
+    here = pdirname(slug + ".html") or "."
+
+    def settle(target, frag):
+        kind, new = resolve_anchor(frag, page_ids.get(target, ()))
+        report["counts"][kind] += 1
+        if kind in ("key", "strict", "stale"):
+            report[kind].add((slug, target, frag, new))
+        return kind, new
+
+    def deferred(m):
+        target, frag = links[int(m.group(1))]
+        rel = prelpath(target + ".html", here)
+        kind, new = settle(target, frag)
+        if kind == "stale":
+            return f'href="{attr(rel)}" class="stale-anchor" title="{attr(stale_title)}"'
+        return f'href="{attr(rel)}#{attr(new)}"'
+
+    def local(m):
+        if 'class="anchor"' in m.group(1):  # 헤딩 옆의 # 링크: 자기 자신을 가리키므로 항상 맞다
+            return m.group(0)
+        frag = m.group(2)
+        kind, new = settle(slug, frag)
+        if kind == "exact":
+            return m.group(0)
+        if kind == "stale":
+            return f'{m.group(1)}href="#" class="stale-anchor" title="{attr(stale_title)}"'
+        return f'{m.group(1)}href="#{attr(new)}"'
+
+    return LOCAL_ANCHOR.sub(local, DEFERRED.sub(deferred, body))
+
+
+REPORT = {}  # 마지막 main() 실행의 링크 검사 결과 (빌드 스크립트가 로그에 옮긴다)
+
+
 def write_text(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
@@ -811,38 +933,49 @@ def main(argv=None):
 
     targets = {lang: make_targets(pages, redirects, lang) for lang in LANGS}
     page_ids, page_links, search = {}, [], {lang: [] for lang in LANGS}
-    n_fallback = hint_full = hint_total = 0
+    n_fallback = hint_full = hint_total = acc_full = acc_total = 0
+    rendered = []  # (페이지, 언어, slug, 제목, 본문 원문, 대체 여부, 렌더러, 본문 HTML) — 모든 페이지의 id 가 정해진 뒤 앵커를 확정한다
     for p in pages:
         rest = rest_of(p)
-        en_head_ids = None
-        for lang in LANGS:  # en 을 먼저 렌더링해 헤딩 id 를 한국어판이 빌려 쓴다
+        en_head_ids = en_acc_ids = None
+        for lang in LANGS:  # en 을 먼저 렌더링해 헤딩·아코디언 id 를 한국어판이 빌려 쓴다
             title, content, _, fallback = view(p, lang)
             use_hint = lang == "ko" and not fallback and en_head_ids is not None
             slug = f"{lang}/{rest}"
-            r = Renderer(slug, targets[lang], p.get("assets", {}), hint=en_head_ids if use_hint else None)
+            r = Renderer(slug, targets[lang], p.get("assets", {}), hint=en_head_ids if use_hint else None,
+                         acc_hint=en_acc_ids if use_hint else None, defer_anchors=True)
             body = r.render(content)
             if lang == "en":
-                en_head_ids = r.head_ids
+                en_head_ids, en_acc_ids = r.head_ids, r.acc_ids
             elif use_hint:
                 hint_total += 1
                 hint_full += r.hint is not None and r.hint_pos == len(en_head_ids) == len(r.head_ids)
+                if en_acc_ids or r.acc_ids:
+                    acc_total += 1
+                    acc_full += r.acc_pos == len(en_acc_ids) == len(r.acc_ids)
             n_fallback += fallback
             page_ids[slug] = r.used_ids
             page_links += [(slug, t, f) for t, f in r.links]
             search[lang].append({"t": title, "p": slug + ".html", "h": [list(h) for h in r.heads if h[0]],
                                  "x": plain_text(content)})
-            root = "../" * slug.count("/")
-            ui = UI_TEXT[lang]
-            url = norm(p["url"] if lang == "en" or fallback else ko_url(p["url"]))
-            md = json.dumps("\n".join(strip_banner(content)), ensure_ascii=False).replace("<", "\\u003c")
-            write_text(os.path.join(out, *(slug + ".html").split("/")), PAGE.format(
-                lang=lang, title=esc(title), root=root, slug=slug, body=body, md=md,
-                crumbs=esc(crumb_of(p, lang, names_ko)),
-                notice=f'<div class="notice">{esc(ui["fallback"])}</div>\n' if fallback else "",
-                en_href=f"{root}en/{rest}.html", ko_href=f"{root}ko/{rest}.html", url=attr(url),
-                fetched=snap.get("fetched_at", ""), icon_search=ICON_SEARCH, icon_copy=ICON_COPY,
-                t_lang=ui["lang_name"], t_toggle=ui["toggle"], t_search=ui["search"], t_copy_page=ui["copy_page"],
-                t_source=ui["source"], t_snapshot=ui["snapshot"]))
+            rendered.append((p, lang, slug, title, content, fallback, r, body))
+
+    report = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set()}
+    for p, lang, slug, title, content, fallback, r, body in rendered:
+        rest = rest_of(p)
+        ui = UI_TEXT[lang]
+        body = resolve_anchors(slug, body, r.links, page_ids, ui["stale"], report)
+        root = "../" * slug.count("/")
+        url = norm(p["url"] if lang == "en" or fallback else ko_url(p["url"]))
+        md = json.dumps("\n".join(strip_banner(content)), ensure_ascii=False).replace("<", "\\u003c")
+        write_text(os.path.join(out, *(slug + ".html").split("/")), PAGE.format(
+            lang=lang, title=esc(title), root=root, slug=slug, body=body, md=md,
+            crumbs=esc(crumb_of(p, lang, names_ko)),
+            notice=f'<div class="notice">{esc(ui["fallback"])}</div>\n' if fallback else "",
+            en_href=f"{root}en/{rest}.html", ko_href=f"{root}ko/{rest}.html", url=attr(url),
+            fetched=snap.get("fetched_at", ""), icon_search=ICON_SEARCH, icon_copy=ICON_COPY,
+            t_lang=ui["lang_name"], t_toggle=ui["toggle"], t_search=ui["search"], t_copy_page=ui["copy_page"],
+            t_source=ui["source"], t_snapshot=ui["snapshot"]))
 
     for lang in LANGS:
         ui = {k: UI_TEXT[lang][k] for k in JS_UI_KEYS}
@@ -858,19 +991,25 @@ def main(argv=None):
                f'<!doctype html><meta charset="utf-8"><title>Claude Code Docs (offline)</title>'
                f'<meta http-equiv="refresh" content="0; url={home}"><a href="{home}">{home}</a>\n')
 
-    # self-check: 변환된 내부 링크가 가리키는 파일과 앵커가 실제로 있는지
-    # (앵커는 사이트 규칙과 구두점 처리가 달라, nav.js 의 폴백과 같이 영숫자만 비교)
+    # self-check: 변환된 내부 링크가 가리키는 파일이 실제로 있는지. 앵커는 위 resolve_anchors 가 확정했다
     missing_files = [(s, t) for s, t, _ in page_links if not os.path.isfile(os.path.join(out, *(t + ".html").split("/")))]
-    anchor_keys = {s: {anchor_key(i) for i in ids} for s, ids in page_ids.items()}
-    bad_anchors = sorted({(s, t, f) for s, t, f in page_links if f and anchor_key(f) not in anchor_keys.get(t, ())})
     n_ko = sum(1 for p in pages if p.get("ko"))
+    c = report["counts"]
+    stale = sorted(report["stale"])
+    REPORT.clear()
+    REPORT.update(counts=dict(c), strict=sorted(report["strict"]), stale=stale, missing_files=len(missing_files),
+                  ko_heading_full=(hint_full, hint_total), ko_accordion_full=(acc_full, acc_total))
     print(f"페이지 {len(pages)}개 x 2개 언어 (한국어판 {n_ko}개, 영어 원문 대체 {n_fallback}개) -> {out}", file=sys.stderr)
-    print(f"한국어 헤딩 id: 영어판과 완전히 일치 {hint_full}/{hint_total}페이지", file=sys.stderr)
-    print(f"내부 링크 {len(page_links)}개 변환, 없는 파일 {len(missing_files)}개, 없는 앵커 {len(bad_anchors)}개"
-          f" (en {sum(s.startswith('en/') for s, _, _ in bad_anchors)}, ko {sum(s.startswith('ko/') for s, _, _ in bad_anchors)})",
+    print(f"한국어 id 빌려 쓰기: 헤딩 {hint_full}/{hint_total}페이지, 아코디언 {acc_full}/{acc_total}페이지가 영어판과 완전히 일치",
           file=sys.stderr)
-    for s, t, f in bad_anchors[:10]:
-        print(f"  앵커 없음: {s} -> {t}#{f}", file=sys.stderr)
+    print(f"내부 링크 {len(page_links)}개 변환, 없는 파일 {len(missing_files)}개", file=sys.stderr)
+    print(f"앵커 확정 {sum(c.values())}건: 그대로 {c['exact']}, 대소문자·구두점 보정 {c['key']}, 단어 일치 보정 {c['strict']}, "
+          f"원문에서 사라져 페이지 처음으로 연결 {c['stale']} (고유 {len(stale)}건: "
+          f"en {sum(s.startswith('en/') for s, *_ in stale)}, ko {sum(s.startswith('ko/') for s, *_ in stale)})", file=sys.stderr)
+    for s, t, f, _ in REPORT["strict"][:10]:
+        print(f"  단어 일치로 보정: {s} -> {t}#{f}", file=sys.stderr)
+    for s, t, f, _ in stale[:10]:
+        print(f"  앵커 없음(페이지 처음으로): {s} -> {t}#{f}", file=sys.stderr)
     return len(missing_files)
 
 

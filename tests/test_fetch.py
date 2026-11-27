@@ -99,6 +99,16 @@ class NavNames(unittest.TestCase):
         names = f.korean_names({}, {}, ["A", "B"], ["가"], {}, {}, {}, {})
         self.assertEqual(names, {})
 
+    def test_skipped_pairings_are_reported_not_silent(self):
+        problems = []
+        f.korean_names({}, {}, ["A", "B"], ["가"], {"T": ["x", "y"]}, {"T": ["엑스"]}, {"T": ["s"]}, {"T": ["에스"]}, problems)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("상단 탭", problems[0])
+        self.assertIn("T 탭의 그룹", problems[1])
+        ok = []
+        f.korean_names({}, {}, ["A"], ["가"], {}, {}, {}, {}, ok)
+        self.assertEqual(ok, [])
+
     def test_names_identical_in_both_languages_are_dropped(self):
         self.assertEqual(f.korean_names({}, {}, ["Agent SDK"], ["Agent SDK"], {}, {}, {}, {}), {})
 

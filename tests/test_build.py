@@ -122,6 +122,30 @@ class History(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(d, "2026-01-01")))
 
 
+class LogSections(unittest.TestCase):
+    def test_link_check_nav_warning_and_failures_are_logged(self):
+        from datetime import datetime
+        state = {"result": "성공", "name": "2026-01-01",
+                 "links": {"counts": {"exact": 5, "key": 1, "strict": 1, "stale": 1}, "missing_files": 0,
+                           "ko_heading_full": (3, 3), "ko_accordion_full": (1, 1),
+                           "strict": [("en/a", "en/b", "delivery-mechanisms", "choose-a-delivery-mechanism")],
+                           "stale": [("en/a", "en/b", "gone", ""), ("ko/a", "ko/b", "gone", "")]},
+                 "nav_mismatch": ["상단 탭: 영어 8개, 한국어 7개라 짝짓지 못함"],
+                 "failures": [("https://x/y.md", "HTTP Error 500 | boom")]}
+        with tempfile.TemporaryDirectory() as d:
+            path = b.write_log(d, datetime(2026, 1, 1), datetime(2026, 1, 1), d, state, "")
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        self.assertIn("## 링크 검증", text)
+        self.assertIn("페이지 처음으로 연결 1", text)
+        self.assertIn("  - en/a -> en/b#gone", text)
+        self.assertNotIn("ko/a -> ko/b#gone", text)  # 목록은 영어판 기준 (한국어는 같은 링크)
+        self.assertIn("→ #choose-a-delivery-mechanism", text)
+        self.assertIn("## 경고: 한국어 메뉴 이름", text)
+        self.assertIn("## 수집 실패", text)
+        self.assertIn("| https://x/y.md | HTTP Error 500 / boom |", text)  # 표가 깨지지 않게 | 는 /
+
+
 class SwapSite(unittest.TestCase):
     def make(self, root, name, text):
         os.makedirs(os.path.join(root, name))

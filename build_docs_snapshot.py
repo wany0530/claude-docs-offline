@@ -152,6 +152,9 @@ LOG_GUIDE = """
 |---|---|---|
 | 결과·시간 | 성공/실패/오류, 시작·종료·소요 시간 | 언제 갱신을 시도했고 결과를 믿어도 되는지 판단한다. 실패해도 스냅샷은 그대로이므로 오프라인 사본이 몇 월 며칠 기준인지 알 수 있다. |
 | 수집 요약 | 페이지·에셋 수, 별칭, 숨은 페이지, 비문서·미확인 링크 수, 공식 한국어판 수집·없음 수 | 수집이 빠짐없이 됐는지 점검한다. 페이지 수가 갑자기 줄거나 미확인 링크가 늘면 사이트 구조 변경이나 수집 문제의 단서다. 한국어판 없음이 늘면 공식 한글 문서가 영어보다 뒤처졌다는 뜻이다(번역은 하지 않고 영어 원문을 대신 보여 준다). |
+| 수집 실패 | 받지 못한 영어·한국어 페이지와 에셋의 주소, 마지막 오류 | 빌드가 중단된 원인을 바로 찾는다(일시적 네트워크 오류인지, 주소가 사라졌는지). 실패가 있으면 기존 사이트는 그대로 둔다. |
+| 링크 검증 | 페이지 안팎 앵커 링크의 확정 결과(그대로/보정/페이지 처음으로 연결)와 목록, 없는 파일 수, 한국어 id 일치 | 오프라인 사본의 링크 품질을 보여 준다. "페이지 처음으로 연결" 목록은 공식 문서가 섹션 이름을 바꾸거나 지워 대상이 사라진 링크이고, 늘어나면 공식 문서가 크게 개편됐다는 단서다. "단어 일치 보정"은 제목이 길어진 섹션을 자동으로 이어 준 것이라 가끔 눈으로 확인한다. |
+| 경고: 한국어 메뉴 이름 | 영어·한국어 메뉴 개수가 달라 짝짓지 못한 탭·그룹 | 이 경고가 있으면 한국어 사이트 메뉴에 영어 이름이 남는다. 공식 사이트 메뉴 구조가 바뀐 신호이므로 `korean_names` 를 점검한다. |
 | 추가된 페이지 | 새로 생긴 페이지의 제목·주소·설명·섹션 목록 | 공식 문서에 새 기능이나 가이드가 생겼다는 단서다. 오프라인 사본에 이번에 처음 들어온 내용이라 먼저 읽어 볼 대상을 고르는 데 쓴다. |
 | 삭제된 페이지 | 공식 문서에서 사라진 페이지의 제목·주소 | 기능 폐지, 문서 통합, 주소 이동의 단서다. 사이트(site/)에서는 사라지지만 본문은 history/ 에 최근 KEEP_HISTORY 회분 남아 있다. 북마크와 링크를 점검한다. |
 | 내용이 바뀐 페이지 | 글자 수 증감, 추가·삭제된 줄 수 | 변경의 규모를 보여 준다. 크게 늘었으면 새 내용이 붙은 것이고, 증감이 거의 없으면 문구 수정이나 오탈자일 가능성이 크다. |
@@ -204,6 +207,26 @@ def write_log(log_dir, start, end, out_dir, state, console):
                   f"- 공식 한국어판 {c['ko']}개, 한국어판 없음(영어 원문 대체) {c['ko_missing']}개",
                   f"- 비문서 링크 {c['non_page']}개, 미확인 링크 {c['unresolved']}개",
                   f"- 에셋 {c['assets']}개 (실패 {c['asset_errors']})"]
+    if state.get("failures"):
+        lines += ["", "## 수집 실패 (주소와 마지막 오류)", "", "| 주소 | 오류 |", "|---|---|"]
+        lines += [f"| {u} | {str(e).replace('|', '/')[:160]} |" for u, e in state["failures"]]
+    lk = state.get("links")
+    if lk:
+        c = lk["counts"]
+        lines += ["", "## 링크 검증",
+                  f"- 앵커 링크 {sum(c.values())}건: 그대로 {c.get('exact', 0)}, 대소문자·구두점 보정 {c.get('key', 0)}, "
+                  f"단어 일치 보정 {c.get('strict', 0)}, 원문에서 사라져 페이지 처음으로 연결 {c.get('stale', 0)}",
+                  f"- 없는 파일을 가리키는 링크 {lk['missing_files']}개, 한국어 id 빌려 쓰기 헤딩 {lk['ko_heading_full'][0]}/{lk['ko_heading_full'][1]}"
+                  f"·아코디언 {lk['ko_accordion_full'][0]}/{lk['ko_accordion_full'][1]}페이지 일치"]
+        if lk["stale"]:
+            lines.append(f"- 페이지 처음으로 연결된 고유 링크 {len(lk['stale'])}건 (영어판 기준 목록, 한국어판은 같은 링크):")
+            lines += [f"  - {s} -> {t}#{f}" for s, t, f, _ in lk["stale"] if s.startswith("en/")]
+        if lk["strict"]:
+            lines.append(f"- 단어 일치로 보정한 고유 링크 {len(lk['strict'])}건 (영어판 기준, 앞이 원래 앵커 → 뒤가 연결한 섹션):")
+            lines += [f"  - {s} -> {t}#{f} → #{n}" for s, t, f, n in lk["strict"] if s.startswith("en/")]
+    if state.get("nav_mismatch"):
+        lines += ["", "## 경고: 한국어 메뉴 이름"] + [f"- {m}" for m in state["nav_mismatch"]] + [
+            "- 개수가 달라 짝짓지 못한 이름은 영어 그대로 보입니다. 공식 사이트 메뉴 구조가 바뀐 신호일 수 있습니다."]
     if state.get("change_lines"):
         lines += ["", "## 변경 요약", ""] + state["change_lines"]
     if state.get("removed") or state.get("removed_history"):
@@ -344,6 +367,9 @@ def _run(out_dir, state):
             "non_page": len(snap.get("non_page_links", {})), "unresolved": len(snap.get("unresolved_links", {})),
             "assets": len({a for p in snap["pages"] for a in p.get("assets", {}).values()}),
             "asset_errors": len(snap.get("asset_errors", {}))}
+        state["failures"] = [(p["url"], p.get("error", "원인 불명")) for p in snap["pages"] if p["content"] is None] + \
+                            [(u + " (한국어판)", e) for u, e in ko_failed.items()] + \
+                            [(u, "에셋: " + e) for u, e in snap.get("asset_errors", {}).items()]
         if failed:
             state["result"] = f"실패: 수집 실패 페이지 {len(failed)}개 (예: {failed[0]})"
             log(f"수집 실패 페이지 {len(failed)}개 (예: {failed[0]}). 기존 사이트는 그대로 두고 중단합니다.")
@@ -354,8 +380,11 @@ def _run(out_dir, state):
             log(f"한국어판 수집 실패 페이지 {len(ko_failed)}개 (예: {first}). 기존 사이트는 그대로 두고 중단합니다.")
             return 1
 
+        state["nav_mismatch"] = snap.get("nav_name_mismatch", [])
         log(f"[2/2] HTML 변환: {site_dir}")
-        if docs_json_to_html.main([json_path, site_dir]):
+        failed_convert = docs_json_to_html.main([json_path, site_dir])
+        state["links"] = dict(docs_json_to_html.REPORT)  # 앵커·링크 검사 결과를 로그에 옮긴다
+        if failed_convert:
             state["result"] = "실패: HTML 에 없는 파일을 가리키는 링크가 있음"
             log("HTML 에 없는 파일을 가리키는 링크가 있어 중단합니다. 기존 사이트는 그대로입니다.")
             return 1

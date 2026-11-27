@@ -48,6 +48,8 @@ class Site(unittest.TestCase):
         self.assertIn("en/a.html", read(os.path.join(out, "index.html")))
         for lang in ("en", "ko"):  # 헤더 로고 뒤에 offline 표시
             self.assertIn('Claude Code Docs<span class="offline">offline</span>', read(os.path.join(out, lang, "a.html")))
+            self.assertIn('<aside id="toc">', read(os.path.join(out, lang, "a.html")))  # 우측 목차 자리
+        self.assertIn('"toc": "이 페이지에서"', read(os.path.join(out, "nav-data-ko.js")))
 
     def test_korean_page_uses_official_korean_text_and_borrowed_ids(self):
         _, out = self.build(self.two_pages())
@@ -97,6 +99,29 @@ class Site(unittest.TestCase):
         self.assertIn('src="../assets/pic.png"', read(os.path.join(out, "ko", "a.html")))
         self.assertIn('src="../assets/pic.png"', read(os.path.join(out, "en", "a.html")))
         self.assertEqual(os.listdir(os.path.join(out, "assets")), ["pic.png"])
+
+    def test_links_to_accordions_and_renamed_sections_are_settled_at_build_time(self):
+        a = page("a", "Alpha", "# Alpha\n\n[acc](https://code.claude.com/docs/en/b.md#how-it-works) "
+                 "[long](https://code.claude.com/docs/en/b.md#delivery-mechanisms) "
+                 "[gone](https://code.claude.com/docs/en/b.md#removed-section)",
+                 ko=("알파", "# 알파\n\n[acc](https://code.claude.com/docs/ko/b.md#how-it-works) "
+                     "[gone](https://code.claude.com/docs/ko/b.md#removed-section)"))
+        b = page("b", "Beta", "# Beta\n\n## Choose a delivery mechanism\n\n> [accordion] How it works\n>\n> text",
+                 ko=("베타", "# 베타\n\n## 배달 방식 고르기\n\n> [accordion] 작동 방식\n>\n> 내용"))
+        missing, out = self.build([a, b])
+        self.assertEqual(missing, 0)
+        en, ko = read(os.path.join(out, "en", "a.html")), read(os.path.join(out, "ko", "a.html"))
+        self.assertIn('href="b.html#how-it-works"', en)  # 아코디언 제목을 가리키는 링크가 이제 살아 있음
+        self.assertIn('href="b.html#choose-a-delivery-mechanism"', en)  # 제목이 길어진 섹션 (단어 일치 보정)
+        self.assertIn('href="b.html" class="stale-anchor"', en)  # 사라진 섹션: 페이지 처음으로 + 표시
+        self.assertIn('href="b.html#how-it-works"', ko)
+        self.assertIn('id="how-it-works"', read(os.path.join(out, "ko", "b.html")))  # 한국어 아코디언도 영어 id 를 빌려 씀
+        self.assertIn("페이지 처음으로 이동", ko)  # 안내 문구는 UI 문구(언어별)
+        self.assertIn("no longer exists", en)
+        rep = conv.REPORT
+        self.assertEqual(rep["counts"]["stale"], 2)  # 영어 1 + 한국어 1
+        self.assertEqual(rep["counts"]["strict"], 1)
+        self.assertEqual(len(rep["stale"]), 2)
 
     def test_code_block_marks_language_for_highlighter(self):
         _, out = self.build([page("a", "A", "```json\n{\"k\": 1}\n```")])
