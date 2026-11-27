@@ -1,37 +1,5 @@
 // 오프라인 사이트의 브라우저 동작 E2E. 고정 사이트(build_fixture.py)를 Chromium 으로 연다.
-const path = require("node:path");
-const { pathToFileURL } = require("node:url");
-const base = require("@playwright/test");
-const { expect } = base;
-
-// 모든 테스트에서 콘솔 오류와 페이지 예외가 없어야 한다.
-const test = base.test.extend({
-  page: async ({ page }, use) => {
-    const errors = [];
-    page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
-    page.on("console", (m) => {
-      if (m.type() !== "error") return;
-      if (/favicon\.ico/.test(m.location().url || "")) return; // TODO(4단계): 파비콘을 넣으면 이 예외를 지운다
-      errors.push(m.text());
-    });
-    await use(page);
-    expect(errors, "콘솔 오류").toEqual([]);
-  },
-});
-
-const SITE = path.join(__dirname, ".site");
-const fileUrl = (rel) => pathToFileURL(path.join(SITE, rel)).href;
-
-// 클립보드 쓰기를 가로채 복사된 값을 확인한다 (브라우저의 권한 창 없이).
-async function stubClipboard(page) {
-  await page.addInitScript(() => {
-    window.__copied = null;
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } },
-    });
-  });
-}
+const { test, expect, fileUrl, stubClipboard } = require("./base");
 
 const T = {
   en: {
@@ -73,6 +41,13 @@ for (const lang of ["en", "ko"]) {
       await expect(page.locator("#nav a.leaf:visible")).toHaveCount(before);
     });
 
+    test("사이드바: 하위 그룹이 공식 사이트처럼 일반 페이지 사이에 끼어 있다", async ({ page }) => {
+      // llms.txt 순서는 [가이드, 레퍼런스, 얼룩말, (하위 그룹) 더보기] 인데 공식 순서는 [가이드, 더보기, 레퍼런스, 얼룩말]
+      const sequence = await page.evaluate(() => [...document.querySelector("#nav section.grp").children]
+        .filter((e) => e.matches("a.leaf, details.sub")).map((e) => (e.matches("details") ? "[" + e.querySelector("summary").textContent + "]" : e.textContent)));
+      expect(sequence).toEqual(lang === "en" ? ["Guide", "[More]", "Reference", "Zebra stripes"] : ["가이드", "[더보기]", "레퍼런스", "얼룩말 줄무늬"]);
+    });
+
     test("언어 전환은 같은 페이지의 다른 언어판으로 간다", async ({ page }) => {
       await page.locator("details.lang summary").click();
       await page.locator("details.lang .menu a", { hasText: t.switchTo }).click();
@@ -82,7 +57,7 @@ for (const lang of ["en", "ko"]) {
     });
 
     test("우측 목차: 항목, 클릭 이동, 스크롤 추적", async ({ page }) => {
-      await expect(page.locator("#toc h6")).toHaveText(t.tocTitle);
+      await expect(page.locator("#toc .toc-title")).toHaveText(t.tocTitle);
       const items = page.locator("#toc li a");
       await expect(items.first()).toHaveText(t.firstToc);
       await expect(items.last()).toHaveText(t.lastToc);

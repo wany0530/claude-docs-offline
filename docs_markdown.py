@@ -208,12 +208,15 @@ class Renderer:
         """[(이름, 본문 줄들), ...] -> 탭 UI. 첫 탭이 열려 있고 버튼으로 전환한다 (nav.js)."""
         self.tab_n += 1
         gid = f"tab{self.tab_n}"
+        # WAI-ARIA 탭 패턴: 탭마다 id·aria-controls, 패널은 aria-labelledby, 선택된 탭만 Tab 키로 들어가고 나머지는 화살표 키로 이동
         btns = "".join(
-            f'<button type="button" class="tab-btn{" active" if k == 0 else ""}" role="tab" '
-            f'aria-selected="{"true" if k == 0 else "false"}" data-tab="{gid}-{k}">{self.inline(name)}</button>'
+            f'<button type="button" class="tab-btn{" active" if k == 0 else ""}" role="tab" id="{gid}-{k}-tab" '
+            f'aria-controls="{gid}-{k}" aria-selected="{"true" if k == 0 else "false"}" tabindex="{0 if k == 0 else -1}" '
+            f'data-tab="{gid}-{k}">{self.inline(name)}</button>'
             for k, (name, _) in enumerate(tabs))
-        panels = "".join(f'<div class="tab-panel{" active" if k == 0 else ""}" role="tabpanel" id="{gid}-{k}">'
-                         f"{self.blocks(body)}</div>" for k, (_, body) in enumerate(tabs))
+        panels = "".join(f'<div class="tab-panel{" active" if k == 0 else ""}" role="tabpanel" id="{gid}-{k}" '
+                         f'aria-labelledby="{gid}-{k}-tab" tabindex="0">{self.blocks(body)}</div>'
+                         for k, (_, body) in enumerate(tabs))
         return f'<div class="tabs"><div class="tab-list" role="tablist">{btns}</div>{panels}</div>'
 
     @staticmethod

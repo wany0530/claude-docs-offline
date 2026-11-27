@@ -100,6 +100,12 @@ class Components(unittest.TestCase):
         self.assertEqual(html.count('class="tab-panel active"'), 2)  # 그룹마다 첫 탭만 열림
         self.assertIn("second", html)
 
+    def test_tabs_follow_the_wai_aria_pattern(self):
+        html, _ = render("> [tab] A\n>\n> a\n\n> [tab] B\n>\n> b")
+        self.assertIn('role="tab" id="tab1-0-tab" aria-controls="tab1-0" aria-selected="true" tabindex="0"', html)
+        self.assertIn('role="tab" id="tab1-1-tab" aria-controls="tab1-1" aria-selected="false" tabindex="-1"', html)  # 화살표 키로만 이동
+        self.assertIn('role="tabpanel" id="tab1-1" aria-labelledby="tab1-1-tab" tabindex="0"', html)
+
     def test_separate_tab_groups_do_not_merge(self):
         html, _ = render("> [tab] A\n>\n> a\n\ntext between\n\n> [tab] B\n>\n> b")
         self.assertEqual(html.count('class="tabs"'), 2)

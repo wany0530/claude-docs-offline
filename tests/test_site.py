@@ -34,8 +34,24 @@ class Site(unittest.TestCase):
         self.assertIn("en/a.html", read(os.path.join(out, "index.html")))
         for lang in ("en", "ko"):  # 헤더 로고 뒤에 offline 표시
             self.assertIn('Claude Code Docs<span class="offline">offline</span>', read(os.path.join(out, lang, "a.html")))
-            self.assertIn('<aside id="toc">', read(os.path.join(out, lang, "a.html")))  # 우측 목차 자리
+            self.assertIn('<aside id="toc" aria-label=', read(os.path.join(out, lang, "a.html")))  # 우측 목차 자리
         self.assertIn('"toc": "이 페이지에서"', read(os.path.join(out, "nav-data-ko.js")))
+
+    def test_landmarks_skip_link_favicon_and_names_in_both_languages(self):
+        _, out = self.build(self.two_pages())
+        expect = {"en": ("Skip to content", "Sections", "Pages", "On this page", "<span>Search...</span>"),
+                  "ko": ("본문으로 건너뛰기", "섹션", "페이지", "이 페이지에서", "<span>검색...</span>")}
+        for lang, words in expect.items():
+            html = read(os.path.join(out, lang, "a.html"))
+            self.assertIn(f'<a class="skip" href="#content">{words[0]}</a>', html)  # 첫 포커스 대상: 본문으로 건너뛰기
+            self.assertIn('<main id="content" tabindex="-1">', html)  # 건너뛰기 링크의 도착 지점
+            self.assertIn(f'<nav id="tabs" aria-label="{words[1]}">', html)  # 같은 역할의 랜드마크는 이름이 서로 달라야 한다
+            self.assertIn(f'<nav id="nav" aria-label="{words[2]}">', html)
+            self.assertIn(f'<aside id="toc" aria-label="{words[3]}">', html)
+            self.assertIn(words[4], html)  # 검색 버튼의 이름은 보이는 글자 그대로다 (좁은 화면에서는 글자를 시각적으로만 숨김)
+            self.assertNotIn('id="searchbtn" type="button" aria-label', html)  # 보이는 글자와 다른 이름을 따로 달면 WCAG 2.5.3 위반
+            self.assertIn('aria-controls="nav" aria-expanded="false"', html)
+            self.assertIn('<link rel="icon" href="data:image/svg+xml', html)  # favicon.ico 요청(404)이 없다
 
     def test_korean_page_uses_official_korean_text_and_borrowed_ids(self):
         _, out = self.build(self.two_pages())

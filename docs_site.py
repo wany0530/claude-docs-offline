@@ -31,14 +31,14 @@ UI_TEXT = {
            "loading": "Loading search index...", "no_index": "Search index not found.",
            "n_match": "{n} page(s) match", "none": "No page contains all words",
            "fallback": "There is no official Korean version of this page, so the original English text is shown.",
-           "close": "Close", "toc": "On this page",
+           "close": "Close", "toc": "On this page", "skip": "Skip to content", "sections": "Sections", "pages": "Pages",
            "stale": "The section this link pointed to no longer exists in the source docs; it opens the top of the page."},
     "ko": {"lang_name": "한국어", "search": "검색...", "filter": "페이지 필터...", "toggle": "메뉴 열기",
            "copy_page": "페이지 복사", "copied": "복사됨", "copy": "복사", "snapshot": "스냅샷", "source": "원문",
            "loading": "검색 색인을 불러오는 중...", "no_index": "검색 색인을 찾을 수 없습니다.",
            "n_match": "{n}개 페이지 일치", "none": "모든 단어를 포함한 페이지가 없습니다",
            "fallback": "이 페이지는 공식 한국어판이 없어 영어 원문을 표시합니다.",
-           "close": "닫기", "toc": "이 페이지에서",
+           "close": "닫기", "toc": "이 페이지에서", "skip": "본문으로 건너뛰기", "sections": "섹션", "pages": "페이지",
            "stale": "이 링크가 가리키던 섹션이 공식 문서에서 이름이 바뀌었거나 사라져, 페이지 처음으로 이동합니다."},
 }
 JS_UI_KEYS = ("filter", "copied", "copy", "loading", "no_index", "n_match", "none", "search", "close", "toc")
@@ -93,8 +93,43 @@ def make_targets(pages, redirects, lang):
     return t
 
 
-def build_nav(pages, lang, names):
-    """상단 탭 -> 사이드바 그룹 -> 페이지 트리. 탭·그룹 이름은 한국어 공식 사이트의 같은 자리 이름(names)을 쓴다."""
+def rank_nav(root, events, lang):
+    """공식 사이드바의 항목 순서(events=[[종류, 이름], ...], 수집기의 parse_nav 결과)에 맞춰 root 아래 형제 항목을 재배열한다.
+
+    공식 사이트는 일반 페이지와 하위 그룹을 섞어 나열하지만 llms.txt 는 하위 그룹을 뒤로 모은다. 순서에 없는 항목(접힌
+    하위 그룹 안의 페이지, 숨은 페이지)은 llms.txt 에서 바로 앞에 있던 형제 바로 뒤에 둔다. 항목이 하나도 맞지 않으면 순서는 그대로다."""
+    pages, groups = {}, {}
+    for i, (kind, name) in enumerate(events):
+        if kind == "p":
+            pages.setdefault(name.split("/", 1)[-1], i)  # 'en/x' -> 'x' (두 언어가 같은 순서를 쓴다)
+        else:
+            groups.setdefault(name, []).append(i)  # 같은 이름이 여러 곳에 있으면 부모 헤더 뒤의 첫 것을 쓴다
+
+    def own_rank(child, parent_rank):
+        if isinstance(child, Group):
+            return next((i for i in groups.get(child.name, []) if i > parent_rank), None)
+        return pages.get(child[1][len(lang) + 1:-len(".html")])
+
+    def sort(group, parent_rank):
+        keyed, prev = [], parent_rank
+        for child in group.children:
+            r = own_rank(child, parent_rank)
+            key = float(r) if r is not None else prev + 0.5
+            keyed.append((key, child))
+            prev = key
+        keyed.sort(key=lambda t: t[0])  # 안정 정렬
+        group.children = [c for _, c in keyed]
+        for key, child in keyed:
+            if isinstance(child, Group):
+                sort(child, key)
+
+    sort(root, -1)
+
+
+def build_nav(pages, lang, names, order=None):
+    """상단 탭 -> 사이드바 그룹 -> 페이지 트리. 탭·그룹 이름은 한국어 공식 사이트의 같은 자리 이름(names)을 쓴다.
+
+    order: {탭 영어 이름: 공식 사이드바 항목 순서} (docs.json 의 nav_order). 없으면 llms.txt 순서 그대로."""
     tr = (lambda n: names.get(n, n)) if lang == "ko" else (lambda n: n)
     tabs = {}
     for p in pages:
@@ -108,6 +143,9 @@ def build_nav(pages, lang, names):
         for f in cat[2:]:  # cat[1] 은 llms.txt 의 사이드바 구역 이름이라 대분류와 겹쳐 생략
             g = g.sub(f, tr(f))
         g.children.append((view(p, lang)[2], f"{lang}/{rest_of(p)}.html"))
+    for r in tabs.values():
+        if order and order.get(r.name):
+            rank_nav(r, order[r.name], lang)
     return [{"n": r.display, "hidden": r.hidden, "c": r.to_json()["c"]} for r in tabs.values()]
 
 

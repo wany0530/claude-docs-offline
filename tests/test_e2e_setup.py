@@ -34,7 +34,7 @@ class FixtureSite(unittest.TestCase):
         self.assertEqual(self.missing, 0)
         r = docs_verify.check(self.out)
         self.assertEqual(r["problems"], [])
-        self.assertEqual(r["counts"]["pages"], 12)  # 6쪽 x 2개 언어
+        self.assertEqual(r["counts"]["pages"], 14)  # 7쪽 x 2개 언어
 
     def test_contains_every_feature_the_e2e_tests_rely_on(self):
         en, ko = self.page("en", "guide"), self.page("ko", "guide")

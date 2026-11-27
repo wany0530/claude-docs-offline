@@ -12,6 +12,7 @@ import unittest
 
 import _path  # noqa: F401
 import docs_anchors
+import docs_diff
 import docs_json_to_html as conv
 import docs_verify
 
@@ -56,6 +57,30 @@ class RealData(unittest.TestCase):
     def test_every_word_match_fix_has_been_reviewed(self):
         self.assertEqual(self.report["unreviewed"], [], "장부(reviewed_anchors.json)에 없는 새 보정: 대상 제목을 확인하고 추가")
         self.assertEqual(self.report["ledger_changed"], [], "장부와 다른 id 로 보정된 것")
+
+    def test_sidebar_follows_the_official_order_stored_in_the_snapshot(self):
+        snap = docs_diff.open_json(HISTORY[-1])
+        order = snap.get("nav_order")
+        if not order:
+            self.skipTest("이 이력에는 nav_order 가 없음 (옛 형식)")
+        with open(os.path.join(self.out, "nav-data-en.js"), encoding="utf-8") as f:
+            text = f.read()
+        nav = json.loads(text[len("window.DOCS_NAV="):text.index(";" + chr(10) + "window.DOCS_UI")])
+        wrong = []
+
+        def check(children, pos, depth, where):
+            ranks = [(pos[k], k[1]) for k in (("p", c["p"][:-5]) if "p" in c else ("g" if depth == 0 else "s", c["g"]) for c in children)
+                     if k in pos]
+            if [r for r, _ in ranks] != sorted(r for r, _ in ranks):
+                wrong.append(where)
+            for c in children:
+                if "g" in c:
+                    check(c["c"], pos, depth + 1, where + " > " + c["g"])
+
+        for tab in nav["tabs"]:
+            if tab["n"] in order:
+                check(tab["c"], {tuple(x): i for i, x in enumerate(order[tab["n"]])}, 0, tab["n"])
+        self.assertEqual(wrong, [], "공식 사이드바와 형제 순서가 다른 그룹")
 
     def test_stale_and_fixed_link_counts_stay_within_limits(self):
         stale = {(t, f) for s, t, f, _ in self.report["stale"] if s.startswith("en/")}

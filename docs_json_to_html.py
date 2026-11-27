@@ -86,12 +86,13 @@ def main(argv=None):
             en_href=f"{root}en/{rest}.html", ko_href=f"{root}ko/{rest}.html", url=attr(url),
             fetched=snap.get("fetched_at", ""), icon_search=ICON_SEARCH, icon_copy=ICON_COPY,
             t_lang=ui["lang_name"], t_toggle=ui["toggle"], t_search=ui["search"], t_copy_page=ui["copy_page"],
+            t_skip=ui["skip"], t_sections=ui["sections"], t_pages=ui["pages"], t_toc=ui["toc"],
             t_source=ui["source"], t_snapshot=ui["snapshot"]))
 
     for lang in LANGS:
         ui = {k: UI_TEXT[lang][k] for k in JS_UI_KEYS}
         write_text(os.path.join(out, f"nav-data-{lang}.js"),
-                   "window.DOCS_NAV=" + json.dumps({"tabs": build_nav(pages, lang, names_ko)}, ensure_ascii=False)
+                   "window.DOCS_NAV=" + json.dumps({"tabs": build_nav(pages, lang, names_ko, snap.get("nav_order"))}, ensure_ascii=False)
                    + ";\nwindow.DOCS_UI=" + json.dumps(ui, ensure_ascii=False) + ";\n")
         write_text(os.path.join(out, f"search-data-{lang}.js"),  # 첫 검색 때 지연 로드
                    "window.DOCS_SEARCH=" + json.dumps(search[lang], ensure_ascii=False, separators=(",", ":")) + ";\n")

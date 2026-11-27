@@ -1,4 +1,4 @@
-"""E2E 가 열어 볼 고정 사이트를 만든다 (실제 변환기와 실제 문서 규칙, 가짜 문서 6쪽, 네트워크 없음).
+"""E2E 가 열어 볼 고정 사이트를 만든다 (실제 변환기와 실제 문서 규칙, 가짜 문서 7쪽, 네트워크 없음).
 
 사용:  python tests/e2e/build_fixture.py [출력폴더]      (기본: tests/e2e/.site, git 무시)
 들어 있는 것: 탭 2개와 하위 그룹이 있는 사이드바, 긴 목차, CJK 첫 열 표(예전 줄바꿈 버그), 본문 탭,
@@ -26,6 +26,22 @@ GUIDE_EN = f"""# Guide
 ## Overview section
 
 Intro with [a link to the accordion]({REF}#how-it-works), [a renamed section]({REF}#removed-section) and [a local link](#install-steps).
+
+> [!NOTE]
+> A note callout with `inline code`.
+
+> [!WARNING]
+> A warning callout.
+
+> A plain block quote.
+
+> [card] [Card one]({REF})
+>
+> Description of card one.
+
+> [card] [Card two](https://code.claude.com/docs/en/api.md)
+>
+> Description of card two.
 
 ### Install steps
 
@@ -69,6 +85,22 @@ GUIDE_KO = f"""# 가이드
 ## 개요 섹션
 
 [아코디언 링크]({KO_REF}#how-it-works), [이름이 바뀐 섹션]({KO_REF}#removed-section), [같은 페이지 링크](#install-steps)가 있습니다.
+
+> [!NOTE]
+> `인라인 코드`가 있는 참고 상자입니다.
+
+> [!WARNING]
+> 경고 상자입니다.
+
+> 일반 인용문입니다.
+
+> [card] [카드 하나]({KO_REF})
+>
+> 카드 하나의 설명입니다.
+
+> [card] [카드 둘](https://code.claude.com/docs/ko/api.md)
+>
+> 카드 둘의 설명입니다.
 
 ### 설치 단계
 
@@ -143,6 +175,8 @@ def pages():
         fx.page("reference", "Reference", REFERENCE_EN, category=basics, ko=("레퍼런스", REFERENCE_KO)),
         fx.page("zebra", "Zebra stripes", "# Zebra stripes\n\n## Why stripes\n\nThe unique zebra stripes topic.", category=basics,
                 ko=("얼룩말 줄무늬", "# 얼룩말 줄무늬\n\n## 줄무늬가 있는 이유\n\n유일한 얼룩말 줄무늬 주제입니다.")),
+        fx.page("more", "More details", "# More details\n\n## Extra\n\nText.", category=("Guides", "Guides", "Basics", "More"),
+                ko=("더 알아보기", "# 더 알아보기\n\n## 추가\n\n본문입니다.")),
         fx.page("advanced", "Advanced topic", "# Advanced topic\n\n## Deep dive\n\nText.", category=("Guides", "Guides", "Advanced", "Deep"),
                 ko=("고급 주제", "# 고급 주제\n\n## 깊이 보기\n\n본문입니다.")),
         fx.page("api", "API", "# API\n\n## Endpoints\n\nSee the [guide](https://code.claude.com/docs/en/guide.md).",
@@ -153,7 +187,10 @@ def pages():
     ]
 
 
-NAV_NAMES_KO = {"Guides": "가이드", "Reference": "레퍼런스", "Basics": "기본", "Advanced": "고급", "Deep": "심화"}
+NAV_NAMES_KO = {"Guides": "가이드", "Reference": "레퍼런스", "Basics": "기본", "Advanced": "고급", "Deep": "심화", "More": "더보기"}
+# 공식 사이드바에서는 하위 그룹(More)이 일반 페이지 사이에 끼어 있다. llms.txt 순서(페이지 먼저, 하위 그룹은 뒤)와 다르다.
+NAV_ORDER = {"Guides": [["g", "Basics"], ["p", "en/guide"], ["s", "More"], ["p", "en/reference"], ["p", "en/zebra"],
+                        ["g", "Advanced"], ["s", "Deep"]]}
 
 
 def build(out_dir):
@@ -161,7 +198,7 @@ def build(out_dir):
     import docs_anchors
     shutil.rmtree(out_dir, ignore_errors=True)
     with tempfile.TemporaryDirectory() as work:
-        missing = fx.build_site(pages(), out_dir, work, nav_names_ko=NAV_NAMES_KO)
+        missing = fx.build_site(pages(), out_dir, work, nav_names_ko=NAV_NAMES_KO, nav_order=NAV_ORDER)
     return missing, dict(docs_anchors.REPORT)
 
 

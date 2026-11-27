@@ -4,7 +4,7 @@ function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=c
 function copyText(t,done){
  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t).then(done);
  else{var x=document.createElement("textarea");x.value=t;document.body.appendChild(x);x.select();document.execCommand("copy");x.remove();done()}}
-var tog=document.getElementById("navtoggle");if(tog)tog.onclick=function(){B.classList.toggle("navopen")};
+var tog=document.getElementById("navtoggle");if(tog)tog.onclick=function(){var o=B.classList.toggle("navopen");tog.setAttribute("aria-expanded",o?"true":"false")};
 
 /* ---- 상단 탭 + 사이드바 ---- */
 var data=window.DOCS_NAV,tabsEl=document.getElementById("tabs"),nav=document.getElementById("nav");
@@ -14,7 +14,7 @@ if(data&&nav){
  data.tabs.forEach(function(t){if(!active&&has(t,curPath))active=t});
  if(!active)active=data.tabs[0];
  data.tabs.forEach(function(t){if(t.hidden)return;var a=el("a",t===active?"active":"",t.n);a.href=root+first(t);tabsEl.appendChild(a)});
- var box=el("input");box.type="search";box.placeholder=T.filter||"Filter pages...";nav.appendChild(box);
+ var box=el("input");box.type="search";box.placeholder=T.filter||"Filter pages...";box.setAttribute("aria-label",T.filter||"Filter pages");nav.appendChild(box);
  var wrap=el("div","tree");nav.appendChild(wrap);
  function leaf(n){var a=el("a","leaf",n.t);a.href=root+n.p;if(n.p===curPath)a.setAttribute("aria-current","page");return a}
  function build(nodes,parent,depth){nodes.forEach(function(n){
@@ -32,9 +32,12 @@ if(data&&nav){
 
 /* ---- 본문 탭, 앵커 이동 ---- */
 function selectTab(b){var g=b.closest(".tabs");Array.prototype.forEach.call(g.children,function(c){
- if(c.classList.contains("tab-list")){Array.prototype.forEach.call(c.children,function(x){var on=x===b;x.classList.toggle("active",on);x.setAttribute("aria-selected",on?"true":"false")})}
+ if(c.classList.contains("tab-list")){Array.prototype.forEach.call(c.children,function(x){var on=x===b;x.classList.toggle("active",on);x.setAttribute("aria-selected",on?"true":"false");x.tabIndex=on?0:-1})}
  else if(c.classList.contains("tab-panel"))c.classList.toggle("active",c.id===b.dataset.tab)})}
 document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest(".tab-btn");if(b)selectTab(b)});
+document.addEventListener("keydown",function(e){var b=e.target.closest&&e.target.closest(".tab-btn");if(!b)return;
+ var btns=Array.prototype.slice.call(b.parentElement.querySelectorAll(".tab-btn")),n=DocsLib.tabIndex(e.key,btns.indexOf(b),btns.length);
+ if(n===null)return;e.preventDefault();selectTab(btns[n]);btns[n].focus()});
 function reveal(t){for(var e=t;e&&e!==B;e=e.parentElement){
  if(e.classList.contains("tab-panel")){var btn=e.parentElement.querySelector('.tab-btn[data-tab="'+e.id+'"]');if(btn)selectTab(btn)}
  if(e.tagName==="DETAILS")e.open=true}}
@@ -48,10 +51,14 @@ window.addEventListener("hashchange",goHash);goHash();
 var toc=document.getElementById("toc");
 if(toc){var hs=Array.prototype.filter.call(document.querySelectorAll("article h2[id],article h3[id]"),function(h){return !h.closest(".tab-panel,details")});
  if(hs.length<2){toc.hidden=true}
- else{toc.appendChild(el("h6",null,T.toc||"On this page"));var ul=el("ul"),links=[];
+ else{toc.appendChild(el("p","toc-title",T.toc||"On this page"));var ul=el("ul"),links=[],inline=el("details","toc-inline"),iul=el("ul");
+  inline.appendChild(el("summary",null,T.toc||"On this page"));
   hs.forEach(function(h){var c=h.cloneNode(true),a0=c.querySelector(".anchor");if(a0)a0.remove();
-   var li=el("li",DocsLib.tocClass(h.tagName)),a=el("a",null,c.textContent.trim());a.href="#"+h.id;li.appendChild(a);ul.appendChild(li);links.push(a)});
-  toc.appendChild(ul);
+   var txt=c.textContent.trim(),cls=DocsLib.tocClass(h.tagName);
+   var li=el("li",cls),a=el("a",null,txt);a.href="#"+h.id;li.appendChild(a);ul.appendChild(li);links.push(a);
+   var li2=el("li",cls),a2=el("a",null,txt);a2.href="#"+h.id;li2.appendChild(a2);iul.appendChild(li2)});
+  toc.appendChild(ul);inline.appendChild(iul);hs[0].parentNode.insertBefore(inline,hs[0]); /* 좁은 화면용 접는 목차 */
+  iul.addEventListener("click",function(e){if(e.target.closest("a"))inline.open=false});
   var tick=false;function spy(){tick=false;var tops=hs.map(function(h){return h.getBoundingClientRect().top}),
    cur=DocsLib.currentIndex(tops,150,window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4);
    links.forEach(function(a,i){if(i===cur)a.setAttribute("aria-current","true");else a.removeAttribute("aria-current")});

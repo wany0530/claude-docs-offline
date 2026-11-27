@@ -49,6 +49,10 @@ test("검색어: 2글자 미만은 무시, 공백으로 나누고 소문자", ()
   assert.deepEqual(L.searchTerms(""), []);
   assert.deepEqual(L.searchTerms(" a "), []);
   assert.deepEqual(L.searchTerms("Hook  Setup"), ["hook", "setup"]);
+  assert.deepEqual(L.searchTerms("훅"), ["훅"]); // 한국어는 한 글자도 단어다
+  assert.deepEqual(L.searchTerms(" 툴 "), ["툴"]);
+  assert.deepEqual(L.searchTerms("鍵"), ["鍵"]);
+  assert.deepEqual(L.searchTerms("x"), []); // 영문 한 글자는 여전히 무시
 });
 
 test("검색 점수: 모든 검색어가 있어야 하고, 제목 > 헤딩 > 본문 순으로 가중", () => {
@@ -117,4 +121,33 @@ test("구문 강조: 어떤 입력이든 조각을 이어 붙이면 원문과 �
     assert.equal(text(L.tokenize(src, L.langConfig(lang))), src, lang);
   }
   assert.equal(text(L.tokenize("", json)), "");
+});
+
+test("키보드: 탭 목록은 좌우 화살표로 돌고 Home/End 로 처음·끝", () => {
+  assert.equal(L.tabIndex("ArrowRight", 0, 3), 1);
+  assert.equal(L.tabIndex("ArrowRight", 2, 3), 0); // 끝에서 처음으로
+  assert.equal(L.tabIndex("ArrowLeft", 0, 3), 2); // 처음에서 끝으로
+  assert.equal(L.tabIndex("Home", 2, 3), 0);
+  assert.equal(L.tabIndex("End", 0, 3), 2);
+  assert.equal(L.tabIndex("ArrowDown", 0, 3), null); // 관련 없는 키는 건드리지 않는다
+  assert.equal(L.tabIndex("ArrowRight", 0, 0), null); // 탭이 없으면 할 일 없음
+});
+
+test("키보드: 검색 결과 목록(-1 은 입력창)", () => {
+  assert.equal(L.listIndex("ArrowDown", -1, 3), 0); // 입력창에서 첫 결과로
+  assert.equal(L.listIndex("ArrowDown", 1, 3), 2);
+  assert.equal(L.listIndex("ArrowDown", 2, 3), 2); // 끝에서 멈춤
+  assert.equal(L.listIndex("ArrowUp", 0, 3), -1); // 첫 결과에서 위로 가면 입력창
+  assert.equal(L.listIndex("ArrowUp", -1, 3), null); // 입력창에서 위로는 갈 곳 없음
+  assert.equal(L.listIndex("ArrowDown", -1, 0), null); // 결과가 없으면 이동 없음
+  assert.equal(L.listIndex("Enter", 0, 3), null);
+});
+
+test("키보드: 포커스 가두기는 끝에서 반대편으로 돈다", () => {
+  assert.equal(L.cycle(0, 3, 1), 1);
+  assert.equal(L.cycle(2, 3, 1), 0);
+  assert.equal(L.cycle(0, 3, -1), 2);
+  assert.equal(L.cycle(-1, 3, 1), 0); // 목록 밖에서 시작하면 처음/끝
+  assert.equal(L.cycle(-1, 3, -1), 2);
+  assert.equal(L.cycle(0, 0, 1), -1);
 });

@@ -120,26 +120,49 @@ def _clean(x):
     return html.unescape(re.sub(r"<[^>]+>", "", x)).strip()
 
 
+def parse_nav(page):
+    """사이트 HTML 문자열 한 장에서 (메뉴 이름 {slug: 이름}, 상단 탭 이름들, 사이드바 그룹 제목들, 하위 그룹 이름들, 사이드바 순서)를 읽는다.
+
+    사이드바 순서는 그룹 제목("g")·페이지("p", 'en/slug')·하위 그룹 헤더("s")를 문서에 나온 순서대로 [[종류, 이름], ...] 로 담는다.
+    공식 사이트는 일반 페이지와 하위 그룹을 섞어 나열하는데 llms.txt 는 그렇지 않아서, 변환기가 형제 항목의 순서를 이것에 맞춘다.
+    (접힌 하위 그룹의 자식 페이지는 HTML 에 없으므로 순서에도 없다.)"""
+    labels, events = {}, []
+    for m in LABEL_RE.finditer(page):
+        labels[m.group(1)] = html.unescape(m.group(2))
+        events.append((m.start(), "p", m.group(1)))
+    for m in GROUP_RE.finditer(page):
+        labels.setdefault(m.group(2), html.unescape(m.group(1)))
+        events.append((m.start(), "p", m.group(2)))
+    uniq = lambda xs: list(dict.fromkeys(x for x in map(_clean, xs) if x))
+    for m in GROUPH_RE.finditer(page):
+        if _clean(m.group(1)):
+            events.append((m.start(), "g", _clean(m.group(1))))
+    for m in SUB_RE.finditer(page):
+        events.append((m.start(), "s", html.unescape(m.group(1))))
+    order, seen = [], set()
+    for _, kind, name in sorted(events):
+        if (kind, name) not in seen:
+            seen.add((kind, name))
+            order.append([kind, name])
+    subs = [html.unescape(x) for x in SUB_RE.findall(page)]
+    return labels, uniq(TAB_RE.findall(page)), uniq(GROUPH_RE.findall(page)), subs, order
+
+
 def scan_nav(url):
-    """사이트 HTML 한 장에서 (메뉴 이름 {slug: 이름}, 상단 탭 이름들, 사이드바 그룹 제목들, 하위 그룹 이름들)을 읽는다. 실패하면 빈 값."""
+    """parse_nav 를 주소의 사이트 HTML 에 적용한다. 받지 못하면 빈 값."""
     try:
         _, _, page = _open(norm(url))
     except Exception:
-        return {}, [], [], []
-    labels = {}
-    for s, label in LABEL_RE.findall(page):
-        labels[s] = html.unescape(label)
-    for label, s in GROUP_RE.findall(page):
-        labels.setdefault(s, html.unescape(label))
-    uniq = lambda xs: list(dict.fromkeys(x for x in map(_clean, xs) if x))
-    return labels, uniq(TAB_RE.findall(page)), uniq(GROUPH_RE.findall(page)), [html.unescape(x) for x in SUB_RE.findall(page)]
+        return {}, [], [], [], []
+    return parse_nav(page)
 
 
 def add_nav_labels(pages, lang="en"):
     """사이트 HTML 좌측 메뉴의 표시 이름을 nav_label 로 저장 (없으면 title).
 
     lang="ko" 이면 각 페이지의 ko 항목(있는 것만)에 저장한다.
-    (메뉴 이름 {slug: 이름}, 상단 탭 이름들, {탭: 그룹 제목들}, {탭: 하위 그룹 이름들}, 이름을 못 찾은 제목들)을 돌려준다.
+    (메뉴 이름 {slug: 이름}, 상단 탭 이름들, {탭: 그룹 제목들}, {탭: 하위 그룹 이름들}, 이름을 못 찾은 제목들,
+    {탭: 사이드바 순서})를 돌려준다.
     """
     def target(p):  # lang 별로 메뉴 이름을 저장할 dict
         return p if lang == "en" else p.get("ko")
@@ -147,17 +170,17 @@ def add_nav_labels(pages, lang="en"):
     def page_url(p):
         return p["url"] if lang == "en" else ko_url(p["url"])
 
-    labels, tabs, groups, subs = {}, [], {}, {}
+    labels, tabs, groups, subs, orders = {}, [], {}, {}, {}
     listed = [p for p in pages if p["category"][0] != "_unlisted" and target(p)]
     firsts = {}
     for p in listed:
         firsts.setdefault(p["category"][0], p)  # 대분류(상단 탭)마다 첫 페이지의 HTML 에 그 탭 메뉴 전체가 있음
     with ThreadPoolExecutor(max_workers=8) as ex:
         scans = list(ex.map(lambda p: scan_nav(page_url(p)), firsts.values()))
-    for (tab, _), (lab, tb, gr, sb) in zip(firsts.items(), scans):
+    for (tab, _), (lab, tb, gr, sb, od) in zip(firsts.items(), scans):
         labels.update(lab)
         tabs = tabs or tb
-        groups[tab], subs[tab] = gr, sb
+        groups[tab], subs[tab], orders[tab] = gr, sb, od
     for p in listed:  # 위에서 못 찾은 페이지는 자기 HTML 에서 직접 찾음
         if slug(page_url(p)) not in labels:
             labels.update(scan_nav(page_url(p))[0])
@@ -170,7 +193,7 @@ def add_nav_labels(pages, lang="en"):
         if name is None:
             fallback.append(t["title"])
         t["nav_label"] = name or t["title"]
-    return labels, tabs, groups, subs, fallback
+    return labels, tabs, groups, subs, fallback, orders
 
 
 def fetch_korean(pages):
@@ -289,8 +312,8 @@ def main(argv=None):
 
     redirects, unresolved, endpoints = resolve_links(pages)
     fetch_korean(pages)
-    en_labels, en_tabs, en_groups, en_subs, no_label = add_nav_labels(pages)
-    ko_labels, ko_tabs, ko_groups, ko_subs, _ = add_nav_labels(pages, "ko")
+    en_labels, en_tabs, en_groups, en_subs, no_label, nav_order = add_nav_labels(pages)
+    ko_labels, ko_tabs, ko_groups, ko_subs, *_ = add_nav_labels(pages, "ko")
     nav_problems = []
     nav_names_ko = korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs, nav_problems)
     n_assets, asset_errors = download_assets(pages, assets_dir)
@@ -303,6 +326,7 @@ def main(argv=None):
         "page_count": len(pages),
         "languages": ["en", "ko"],  # ko = 공식 한국어판 원문(번역 아님). 한국어판이 없는 페이지는 p["ko"] 가 null
         "nav_names_ko": nav_names_ko,  # 영어 탭·그룹 이름 -> 한국어 사이트의 같은 이름
+        "nav_order": nav_order,  # {탭: 공식 사이드바의 항목 순서}: 변환기가 형제 항목(페이지·하위 그룹)의 순서를 맞춘다
         "nav_name_mismatch": nav_problems,  # 개수가 달라 짝짓지 못한 메뉴 이름 목록 (있으면 한국어 메뉴에 영어 이름이 남음)
         "ko_errors": ko_failed,
         "redirects": redirects,  # 본문 링크(.md·# 제거) -> 실제 수집된 페이지 url

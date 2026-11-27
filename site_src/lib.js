@@ -17,9 +17,28 @@ function tocClass(tag){return tag==="H3"?"l3":"l2"}
 function currentIndex(tops,limit,atBottom){var cur=0;for(var i=0;i<tops.length;i++){if(tops[i]<=limit)cur=i;else break}
  if(atBottom)cur=tops.length-1;return cur}
 
+/* ---- 키보드 이동 ---- */
+/* 탭 목록(가로): 좌우 화살표는 끝에서 반대편으로 돌고 Home/End 는 처음/끝. 해당 없는 키면 null. */
+function tabIndex(key,cur,count){
+ if(!count)return null;
+ if(key==="ArrowRight")return (cur+1)%count;
+ if(key==="ArrowLeft")return (cur-1+count)%count;
+ if(key==="Home")return 0;
+ if(key==="End")return count-1;
+ return null}
+/* 검색 결과 목록(세로): cur=-1 은 입력창. 아래는 끝에서 멈추고, 첫 결과에서 위로 가면 입력창(-1). 해당 없는 키면 null. */
+function listIndex(key,cur,count){
+ if(key==="ArrowDown")return count?Math.min(cur+1,count-1):null;
+ if(key==="ArrowUp")return cur<0?null:cur-1;
+ return null}
+/* 포커스 가두기: count 개 중 cur 에서 delta(+1/-1)만큼 이동하고 끝에서 반대편으로 돈다. cur<0(목록 밖)이면 처음/끝에서 시작. */
+function cycle(cur,count,delta){if(!count)return -1;if(cur<0)return delta>0?0:count-1;return (cur+delta+count)%count}
+
 /* ---- 본문 검색: 문서는 {t:제목, x:본문, h:[[제목글자,id]...], p:경로} ---- */
 function prepare(docs){docs.forEach(function(d){d.lt=d.t.toLowerCase();d.lx=d.x.toLowerCase()});return docs}
-function searchTerms(raw){var q=raw.trim().toLowerCase();return q.length<2?[]:q.split(/\s+/).filter(Boolean)}
+/* 한글·한자·가나는 한 글자도 뜻이 있는 단어다(예: 훅, 툴, 맥). 그 외 글자는 2글자 미만이면 결과가 너무 많아 무시한다. */
+var CJK=/[\u{3040}-\u{30ff}\u{3400}-\u{9fff}\u{ac00}-\u{d7af}]/u; /* 가나, 한자, 한글 */
+function searchTerms(raw){var q=raw.trim().toLowerCase();return q.length<2&&!CJK.test(q)?[]:q.split(/\s+/).filter(Boolean)}
 function countOccurrences(h,t){var n=0,i=0;while(n<20&&(i=h.indexOf(t,i))>=0){n++;i+=t.length}return n}
 /* 모든 검색어가 제목·헤딩·본문 중 어딘가에 있어야 한다. 없으면 -1, 있으면 점수(제목 100, 헤딩 20, 본문 등장 횟수). */
 function scoreDoc(d,terms){var score=0;
@@ -73,6 +92,7 @@ function tokenize(text,cfg){var kw={};cfg.kw.split(" ").forEach(function(w){kw[w
  return out}
 
 return {anchorKey:anchorKey,navFirst:navFirst,navHas:navHas,labelMatches:labelMatches,tocClass:tocClass,currentIndex:currentIndex,
+ tabIndex:tabIndex,listIndex:listIndex,cycle:cycle,
  prepare:prepare,searchTerms:searchTerms,countOccurrences:countOccurrences,scoreDoc:scoreDoc,rankDocs:rankDocs,
  pickHeading:pickHeading,firstMatchIndex:firstMatchIndex,markSegments:markSegments,
  langConfig:langConfig,highlightRegex:highlightRegex,tokenize:tokenize}

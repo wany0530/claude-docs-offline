@@ -81,17 +81,18 @@ NAV_HTML = {
 class NavNames(unittest.TestCase):
     def test_scan_nav_reads_tabs_buttons_groups_and_subgroups(self):
         with mock.patch.object(f, "_open", lambda url: (url, "text/html", NAV_HTML["en"])):
-            labels, tabs, groups, subs = f.scan_nav(EN + "overview")
+            labels, tabs, groups, subs, order = f.scan_nav(EN + "overview")
         self.assertEqual(tabs, ["Getting started", "Plugins"])  # 현재 탭은 button, 나머지는 a
         self.assertEqual(groups, ["Core concepts"])
         self.assertEqual(subs, ["Claude Code in the cloud"])
         self.assertEqual(labels["en/overview"], "Overview")
+        self.assertEqual(order, [["g", "Core concepts"], ["p", "en/overview"], ["s", "Claude Code in the cloud"]])
 
     def test_korean_names_pair_same_positions_without_translating(self):
         def scan(lang):
             with mock.patch.object(f, "_open", lambda url: (url, "text/html", NAV_HTML[lang])):
                 return f.scan_nav(f"https://code.claude.com/docs/{lang}/overview")
-        (en_l, en_t, en_g, en_s), (ko_l, ko_t, ko_g, ko_s) = scan("en"), scan("ko")
+        (en_l, en_t, en_g, en_s, _), (ko_l, ko_t, ko_g, ko_s, _) = scan("en"), scan("ko")
         names = f.korean_names(en_l, ko_l, en_t, ko_t, {"Getting started": en_g}, {"Getting started": ko_g},
                                {"Getting started": en_s}, {"Getting started": ko_s})
         self.assertEqual(names["Getting started"], "시작하기")
@@ -195,9 +196,9 @@ class AddNavLabels(unittest.TestCase):
     def test_scans_each_tabs_first_page_once_then_only_pages_it_missed(self):
         pages, calls = self.pages(), []
         table = {
-            EN + "a.md": ({"en/a": "Label A", "en/c": "Label C"}, ["Tab1", "Tab2"], ["G"], ["Sub"]),
-            EN + "c.md": ({"en/c": "Label C"}, ["Tab1", "Tab2"], ["G2"], []),
-            EN + "b.md": ({"en/b": "Label B"}, [], [], []),
+            EN + "a.md": ({"en/a": "Label A", "en/c": "Label C"}, ["Tab1", "Tab2"], ["G"], ["Sub"], [["g", "G"], ["p", "en/a"]]),
+            EN + "c.md": ({"en/c": "Label C"}, ["Tab1", "Tab2"], ["G2"], [], [["p", "en/c"]]),
+            EN + "b.md": ({"en/b": "Label B"}, [], [], [], []),
         }
 
         def fake_scan(url):
@@ -205,20 +206,21 @@ class AddNavLabels(unittest.TestCase):
             return table[url]
 
         with mock.patch.object(f, "scan_nav", fake_scan):
-            labels, tabs, groups, subs, fallback = f.add_nav_labels(pages)
+            labels, tabs, groups, subs, fallback, orders = f.add_nav_labels(pages)
         self.assertEqual(sorted(calls), [EN + "a.md", EN + "b.md", EN + "c.md"])  # 탭당 첫 페이지 + 이름을 못 찾은 b
         self.assertEqual([p["nav_label"] for p in pages[:3]], ["Label A", "Label B", "Label C"])
         self.assertEqual(pages[3]["nav_label"], "D")  # 목차에 없는 숨은 페이지는 제목을 쓴다
         self.assertEqual(fallback, ["D"])
         self.assertEqual(tabs, ["Tab1", "Tab2"])
         self.assertEqual((groups, subs), ({"Tab1": ["G"], "Tab2": ["G2"]}, {"Tab1": ["Sub"], "Tab2": []}))
+        self.assertEqual(orders, {"Tab1": [["g", "G"], ["p", "en/a"]], "Tab2": [["p", "en/c"]]})  # 탭마다 첫 페이지에서 읽은 순서
 
     def test_korean_labels_go_to_the_ko_entry_and_pages_without_ko_are_skipped(self):
         pages, calls = self.pages(), []
 
         def fake_scan(url):
             calls.append(url)
-            return ({"ko/a": "라벨 A", "ko/b": "x"}, ["탭1"], ["그룹"], []) if "/docs/ko/a" in url else ({}, [], [], [])
+            return ({"ko/a": "라벨 A", "ko/b": "x"}, ["탭1"], ["그룹"], [], []) if "/docs/ko/a" in url else ({}, [], [], [], [])
 
         with mock.patch.object(f, "scan_nav", fake_scan):
             f.add_nav_labels(pages, "ko")
@@ -258,6 +260,33 @@ class DownloadAssets(unittest.TestCase):
 
 NAV_EN = NAV_HTML["en"]
 NAV_KO = NAV_HTML["ko"]
+
+
+SIDEBAR_HTML = (
+    '<div class="sidebar-group-header z"><h5>Platforms</h5></div>'
+    '<li id="/en/platforms" class="a" data-title="Overview"></li>'
+    '<li id="/en/remote-control" class="a" data-title="Remote Control"></li>'
+    '<li data-title="In the cloud" data-group-tag="" class="space-y-px">'
+    '<li id="/en/projects" class="a" data-title="Projects"></li>'
+    '<li data-title="On desktop" data-group-tag="" class="space-y-px">'
+    '<li id="/en/mobile" class="a" data-title="Mobile"></li>'
+    '<div class="sidebar-group-header z"><h5>Review</h5></div>'
+    '<li data-title="Landing" class="g" id="/en/review-home"></li>'
+    '<li id="/en/remote-control" class="dup" data-title="Remote Control"></li>')
+
+
+class ParseNavOrder(unittest.TestCase):
+    def test_pages_groups_and_subgroups_come_back_in_document_order_without_duplicates(self):
+        labels, tabs, groups, subs, order = f.parse_nav(SIDEBAR_HTML)
+        self.assertEqual(order, [["g", "Platforms"], ["p", "en/platforms"], ["p", "en/remote-control"], ["s", "In the cloud"],
+                                 ["p", "en/projects"], ["s", "On desktop"], ["p", "en/mobile"], ["g", "Review"],
+                                 ["p", "en/review-home"]])  # 같은 페이지가 두 번 나와도 첫 위치만
+        self.assertEqual((groups, subs), (["Platforms", "Review"], ["In the cloud", "On desktop"]))
+        self.assertEqual(labels["en/review-home"], "Landing")  # id 가 data-title 뒤에 오는 그룹 항목도 이름과 순서에 들어간다
+
+    def test_unreadable_page_gives_empty_values(self):
+        with mock.patch.object(f, "_open", side_effect=OSError("down")):
+            self.assertEqual(f.scan_nav(EN + "x"), ({}, [], [], [], []))
 
 
 class FetchMain(unittest.TestCase):
