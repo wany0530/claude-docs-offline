@@ -866,6 +866,52 @@ def resolve_anchor(frag, ids):
     return "stale", ""
 
 
+HINT_MIN = 0.6  # 끊김 링크의 최근접 후보를 로그에 힌트로 보여 줄 최소 단어 겹침(자카드)
+
+
+def nearest_id(frag, ids):
+    """frag 와 단어가 가장 많이 겹치는 id 를 (겹침 비율, id) 로 돌려준다. 링크를 바꾸지 않고 사람이 볼 힌트로만 쓴다."""
+    want = _tokens(frag)
+    best = (0.0, "")
+    for i in sorted(ids):
+        t = _tokens(i)
+        if want and t:
+            j = len(want & t) / len(want | t)
+            if j > best[0]:
+                best = (j, i)
+    return best
+
+
+LEDGER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reviewed_anchors.json")
+
+
+def ledger_key(target, frag):
+    """'en/agent-sdk/mcp' + 'in-code' -> 'agent-sdk/mcp#in-code' (언어 접두어를 뗀다: 두 언어가 같은 앵커를 쓴다)."""
+    return target.split("/", 1)[1] + "#" + frag
+
+
+def load_ledger(path=None):
+    """사람이 확인한 단어 일치 보정 장부 {키: 연결한 id}. 파일이 없으면 빈 장부."""
+    path = LEDGER_PATH if path is None else path
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f).get("pairs", {})
+
+
+def compare_ledger(strict, ledger):
+    """strict: {(출처, 대상, 앵커, 연결한 id)} -> (장부에 없는 새 보정, 장부와 다른 id 로 보정된 것). 둘 다 고유 목록."""
+    new, changed = set(), set()
+    for _, target, frag, got in strict:
+        k = ledger_key(target, frag)
+        want = ledger.get(k)
+        if want is None:
+            new.add((k, got))
+        elif want != got:
+            changed.add((k, want, got))
+    return sorted(new), sorted(changed)
+
+
 DEFERRED = re.compile(r'href="\x01(\d+)\x01"')
 LOCAL_ANCHOR = re.compile(r'(<a\s[^>]*?)href="#([^"]+)"')  # 같은 페이지 안의 #앵커 링크 (코드 예시 속 글자는 &lt;a 라 걸리지 않음)
 
@@ -880,6 +926,10 @@ def resolve_anchors(slug, body, links, page_ids, stale_title, report):
         report["counts"][kind] += 1
         if kind in ("key", "strict", "stale"):
             report[kind].add((slug, target, frag, new))
+        if kind == "stale":  # 단어가 많이 겹치는 후보가 있으면 사람이 볼 힌트로만 남긴다 (링크는 바꾸지 않는다)
+            score, cand = nearest_id(frag, page_ids.get(target, ()))
+            if score >= HINT_MIN:
+                report["hint"].add((slug, target, frag, cand))
         return kind, new
 
     def deferred(m):
@@ -960,7 +1010,7 @@ def main(argv=None):
                                  "x": plain_text(content)})
             rendered.append((p, lang, slug, title, content, fallback, r, body))
 
-    report = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set()}
+    report = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set(), "hint": set()}
     for p, lang, slug, title, content, fallback, r, body in rendered:
         rest = rest_of(p)
         ui = UI_TEXT[lang]
@@ -996,9 +1046,11 @@ def main(argv=None):
     n_ko = sum(1 for p in pages if p.get("ko"))
     c = report["counts"]
     stale = sorted(report["stale"])
+    unreviewed, changed = compare_ledger(report["strict"], load_ledger())
     REPORT.clear()
     REPORT.update(counts=dict(c), strict=sorted(report["strict"]), stale=stale, missing_files=len(missing_files),
-                  ko_heading_full=(hint_full, hint_total), ko_accordion_full=(acc_full, acc_total))
+                  ko_heading_full=(hint_full, hint_total), ko_accordion_full=(acc_full, acc_total),
+                  unreviewed=unreviewed, ledger_changed=changed, hints=sorted(report["hint"]))
     print(f"페이지 {len(pages)}개 x 2개 언어 (한국어판 {n_ko}개, 영어 원문 대체 {n_fallback}개) -> {out}", file=sys.stderr)
     print(f"한국어 id 빌려 쓰기: 헤딩 {hint_full}/{hint_total}페이지, 아코디언 {acc_full}/{acc_total}페이지가 영어판과 완전히 일치",
           file=sys.stderr)
@@ -1006,8 +1058,11 @@ def main(argv=None):
     print(f"앵커 확정 {sum(c.values())}건: 그대로 {c['exact']}, 대소문자·구두점 보정 {c['key']}, 단어 일치 보정 {c['strict']}, "
           f"원문에서 사라져 페이지 처음으로 연결 {c['stale']} (고유 {len(stale)}건: "
           f"en {sum(s.startswith('en/') for s, *_ in stale)}, ko {sum(s.startswith('ko/') for s, *_ in stale)})", file=sys.stderr)
-    for s, t, f, _ in REPORT["strict"][:10]:
-        print(f"  단어 일치로 보정: {s} -> {t}#{f}", file=sys.stderr)
+    print(f"검토 장부 대조: 장부에 없는 새 보정 {len(unreviewed)}건, 장부와 다르게 보정된 것 {len(changed)}건", file=sys.stderr)
+    for k, got in unreviewed[:10]:
+        print(f"  검토 필요(새 보정): {k} -> #{got}", file=sys.stderr)
+    for k, want, got in changed[:10]:
+        print(f"  검토 필요(장부와 다름): {k} 장부 #{want} / 이번 #{got}", file=sys.stderr)
     for s, t, f, _ in stale[:10]:
         print(f"  앵커 없음(페이지 처음으로): {s} -> {t}#{f}", file=sys.stderr)
     return len(missing_files)

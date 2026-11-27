@@ -14,6 +14,7 @@
 안전장치: 인터넷이 안 되면 기존 사이트는 건드리지 않고 종료합니다(로그 파일만 남음). 빌드는 <출력폴더>/.building 에서
 하고, 모든 페이지 수집(영어·한국어)과 변환이 성공했을 때만 site/ 를 교체합니다. 표준 라이브러리만 사용합니다.
 """
+import collections
 import gzip
 import io
 import json
@@ -21,12 +22,14 @@ import os
 import re
 import shutil
 import sys
+import time
 import traceback
 from datetime import date, datetime
 
 import docs_diff
 import docs_fetch_json
 import docs_json_to_html
+import docs_verify
 from docs_common import setup_console
 
 KEEP_HISTORY = 30  # 남겨둘 이력(날짜별 docs.json.gz 와 .diff) 개수. 오래된 것부터 지운다. 다음 비교의 기준이 되므로 최소 1.
@@ -153,7 +156,7 @@ LOG_GUIDE = """
 | 결과·시간 | 성공/실패/오류, 시작·종료·소요 시간 | 언제 갱신을 시도했고 결과를 믿어도 되는지 판단한다. 실패해도 스냅샷은 그대로이므로 오프라인 사본이 몇 월 며칠 기준인지 알 수 있다. |
 | 수집 요약 | 페이지·에셋 수, 별칭, 숨은 페이지, 비문서·미확인 링크 수, 공식 한국어판 수집·없음 수 | 수집이 빠짐없이 됐는지 점검한다. 페이지 수가 갑자기 줄거나 미확인 링크가 늘면 사이트 구조 변경이나 수집 문제의 단서다. 한국어판 없음이 늘면 공식 한글 문서가 영어보다 뒤처졌다는 뜻이다(번역은 하지 않고 영어 원문을 대신 보여 준다). |
 | 수집 실패 | 받지 못한 영어·한국어 페이지와 에셋의 주소, 마지막 오류 | 빌드가 중단된 원인을 바로 찾는다(일시적 네트워크 오류인지, 주소가 사라졌는지). 실패가 있으면 기존 사이트는 그대로 둔다. |
-| 링크 검증 | 페이지 안팎 앵커 링크의 확정 결과(그대로/보정/페이지 처음으로 연결)와 목록, 없는 파일 수, 한국어 id 일치 | 오프라인 사본의 링크 품질을 보여 준다. "페이지 처음으로 연결" 목록은 공식 문서가 섹션 이름을 바꾸거나 지워 대상이 사라진 링크이고, 늘어나면 공식 문서가 크게 개편됐다는 단서다. "단어 일치 보정"은 제목이 길어진 섹션을 자동으로 이어 준 것이라 가끔 눈으로 확인한다. |
+| 링크 검증 | 페이지 안팎 앵커 링크의 확정 결과(그대로/보정/페이지 처음으로 연결)와 목록, 없는 파일 수, 한국어 id 일치 | 오프라인 사본의 링크 품질을 보여 준다. "페이지 처음으로 연결" 목록은 공식 문서가 섹션 이름을 바꾸거나 지워 대상이 사라진 링크이고, 늘어나면 공식 문서가 크게 개편됐다는 단서다. "단어 일치 보정"은 제목이 길어진 섹션을 자동으로 이어 준 것이라, 장부(reviewed_anchors.json)에 없는 새 보정은 "검토 필요"로 따로 나온다. "독립 검사"는 변환기 코드를 쓰지 않고 결과 HTML 만 다시 읽어 모든 링크의 대상 파일·앵커·중복 id 를 확인한 것이고, 위반이 있으면 빌드가 중단된다(대상이 존재한다는 것만 보장하며 섹션이 의미상 맞는지는 장부와 사람의 판단이다). "수동 확인 후보"는 끊긴 링크와 비슷한 제목이 있다는 힌트일 뿐 링크는 바뀌지 않았다. |
 | 경고: 한국어 메뉴 이름 | 영어·한국어 메뉴 개수가 달라 짝짓지 못한 탭·그룹 | 이 경고가 있으면 한국어 사이트 메뉴에 영어 이름이 남는다. 공식 사이트 메뉴 구조가 바뀐 신호이므로 `korean_names` 를 점검한다. |
 | 추가된 페이지 | 새로 생긴 페이지의 제목·주소·설명·섹션 목록 | 공식 문서에 새 기능이나 가이드가 생겼다는 단서다. 오프라인 사본에 이번에 처음 들어온 내용이라 먼저 읽어 볼 대상을 고르는 데 쓴다. |
 | 삭제된 페이지 | 공식 문서에서 사라진 페이지의 제목·주소 | 기능 폐지, 문서 통합, 주소 이동의 단서다. 사이트(site/)에서는 사라지지만 본문은 history/ 에 최근 KEEP_HISTORY 회분 남아 있다. 북마크와 링크를 점검한다. |
@@ -218,12 +221,31 @@ def write_log(log_dir, start, end, out_dir, state, console):
                   f"단어 일치 보정 {c.get('strict', 0)}, 원문에서 사라져 페이지 처음으로 연결 {c.get('stale', 0)}",
                   f"- 없는 파일을 가리키는 링크 {lk['missing_files']}개, 한국어 id 빌려 쓰기 헤딩 {lk['ko_heading_full'][0]}/{lk['ko_heading_full'][1]}"
                   f"·아코디언 {lk['ko_accordion_full'][0]}/{lk['ko_accordion_full'][1]}페이지 일치"]
+        vf = lk.get("verify")
+        if vf:
+            vc = vf["counts"]
+            lines.append(f"- 독립 검사(결과 HTML 을 다시 읽음): 페이지 {vc.get('pages', 0)}개, 링크 {vc.get('links', 0)}건"
+                         f"(앵커 {vc.get('anchors', 0)}건), 끊김 표시 {vc.get('stale', 0)}건 -> 위반 {len(vf['problems'])}건")
+        if lk.get("unreviewed") or lk.get("ledger_changed"):
+            lines.append(f"- **검토 필요**: 장부(reviewed_anchors.json)에 없는 새 보정 {len(lk.get('unreviewed', []))}건, "
+                         f"장부와 다르게 보정된 것 {len(lk.get('ledger_changed', []))}건. 확인한 뒤 장부에 추가하거나 고친다.")
+            lines += [f"  - 새 보정: {k} → #{got}" for k, got in lk.get("unreviewed", [])]
+            lines += [f"  - 장부와 다름: {k} 장부 #{want} / 이번 #{got}" for k, want, got in lk.get("ledger_changed", [])]
+        elif lk.get("strict"):
+            lines.append("- 새 보정 없음: 단어 일치 보정은 모두 장부에 있는 검토 완료 항목이다.")
         if lk["stale"]:
-            lines.append(f"- 페이지 처음으로 연결된 고유 링크 {len(lk['stale'])}건 (영어판 기준 목록, 한국어판은 같은 링크):")
-            lines += [f"  - {s} -> {t}#{f}" for s, t, f, _ in lk["stale"] if s.startswith("en/")]
+            stale_en = collections.Counter((t, f) for s, t, f, _ in lk["stale"] if s.startswith("en/"))
+            lines.append(f"- 페이지 처음으로 연결된 링크: 영어판 고유 {len(stale_en)}건(링크한 페이지 기준 {sum(stale_en.values())}곳). "
+                         f"한국어판도 같은 링크이며, 아래는 영어판 기준 (대상#원래 앵커, 링크한 페이지 수):")
+            lines += [f"  - {t}#{f} ({n}곳)" for (t, f), n in sorted(stale_en.items())]
+        hints = sorted({(t, f, x) for s, t, f, x in lk.get("hints", []) if s.startswith("en/")})
+        if hints:
+            lines.append(f"- 수동 확인 후보 {len(hints)}건 (끊긴 링크 중 단어가 많이 겹치는 섹션이 있는 것. 링크는 바꾸지 않았다. 앞이 원래 앵커 ~ 뒤가 후보):")
+            lines += [f"  - {t}#{f} ~ #{x}" for t, f, x in hints]
         if lk["strict"]:
-            lines.append(f"- 단어 일치로 보정한 고유 링크 {len(lk['strict'])}건 (영어판 기준, 앞이 원래 앵커 → 뒤가 연결한 섹션):")
-            lines += [f"  - {s} -> {t}#{f} → #{n}" for s, t, f, n in lk["strict"] if s.startswith("en/")]
+            strict_en = collections.Counter((t, f, n) for s, t, f, n in lk["strict"] if s.startswith("en/"))
+            lines.append(f"- 단어 일치로 보정한 링크: 영어판 고유 {len(strict_en)}건 (대상#원래 앵커 → 연결한 섹션, 링크한 페이지 수):")
+            lines += [f"  - {t}#{f} → #{n} ({c}곳)" for (t, f, n), c in sorted(strict_en.items())]
     if state.get("nav_mismatch"):
         lines += ["", "## 경고: 한국어 메뉴 이름"] + [f"- {m}" for m in state["nav_mismatch"]] + [
             "- 개수가 달라 짝짓지 못한 이름은 영어 그대로 보입니다. 공식 사이트 메뉴 구조가 바뀐 신호일 수 있습니다."]
@@ -316,18 +338,34 @@ def remove_legacy_dirs(out_dir):
     return removed
 
 
+SWAP_RETRIES, SWAP_DELAY = 6, 1.0  # Windows 에서 브라우저·IDE 가 폴더를 잠깐 잡고 있으면 이름 변경이 거부된다
+
+
+def _replace(src, dst):
+    """os.replace 를 PermissionError(폴더가 다른 프로그램에 잡혀 있을 때)에 한해 몇 번 다시 시도한다."""
+    for attempt in range(SWAP_RETRIES):
+        try:
+            return os.replace(src, dst)
+        except PermissionError as e:
+            if attempt == SWAP_RETRIES - 1:
+                raise PermissionError(
+                    f"{src} 를 옮기지 못했습니다. 다른 프로그램(브라우저, IDE, 탐색기, 로컬 서버)이 이 폴더를 쓰고 있을 수 있습니다. "
+                    f"닫은 뒤 다시 실행하세요. 기존 사이트는 그대로입니다. ({e})") from e
+            time.sleep(SWAP_DELAY * (attempt + 1))
+
+
 def swap_site(out_dir, new_site):
     """site/ 를 새 사이트로 교체한다. 교체 도중 실패하면 기존 사이트를 되돌려 놓는다."""
     final, old = os.path.join(out_dir, SITE_DIR), os.path.join(out_dir, SITE_DIR + ".old")
     shutil.rmtree(old, ignore_errors=True)
     had = os.path.exists(final)
     if had:
-        os.replace(final, old)
+        _replace(final, old)
     try:
-        os.replace(new_site, final)
+        _replace(new_site, final)
     except Exception:
         if had:
-            os.replace(old, final)
+            _replace(old, final)
         raise
     shutil.rmtree(old, ignore_errors=True)
     return final
@@ -384,6 +422,16 @@ def _run(out_dir, state):
         log(f"[2/2] HTML 변환: {site_dir}")
         failed_convert = docs_json_to_html.main([json_path, site_dir])
         state["links"] = dict(docs_json_to_html.REPORT)  # 앵커·링크 검사 결과를 로그에 옮긴다
+        verdict = docs_verify.check(site_dir)  # 변환기와 무관하게 결과 HTML 의 링크·id 를 전수 재검사
+        state["links"]["verify"] = verdict
+        vc = verdict["counts"]
+        log(f"독립 검사: 페이지 {vc.get('pages', 0)}개, 링크 {vc.get('links', 0)}건(앵커 {vc.get('anchors', 0)}건) -> 위반 {len(verdict['problems'])}건")
+        if verdict["problems"]:
+            for page, kind, detail in verdict["problems"][:20]:
+                log(f"  {kind}: {page} -> {detail}")
+            state["result"] = f"실패: 독립 검사에서 링크·id 위반 {len(verdict['problems'])}건"
+            log("결과 HTML 에 깨진 링크나 id 문제가 있어 중단합니다. 기존 사이트는 그대로입니다.")
+            return 1
         if failed_convert:
             state["result"] = "실패: HTML 에 없는 파일을 가리키는 링크가 있음"
             log("HTML 에 없는 파일을 가리키는 링크가 있어 중단합니다. 기존 사이트는 그대로입니다.")

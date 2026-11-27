@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import _path  # noqa: F401
 import build_docs_snapshot as b
@@ -129,7 +130,10 @@ class LogSections(unittest.TestCase):
                  "links": {"counts": {"exact": 5, "key": 1, "strict": 1, "stale": 1}, "missing_files": 0,
                            "ko_heading_full": (3, 3), "ko_accordion_full": (1, 1),
                            "strict": [("en/a", "en/b", "delivery-mechanisms", "choose-a-delivery-mechanism")],
-                           "stale": [("en/a", "en/b", "gone", ""), ("ko/a", "ko/b", "gone", "")]},
+                           "stale": [("en/a", "en/b", "gone", ""), ("ko/a", "ko/b", "gone", "")],
+                           "verify": {"counts": {"pages": 4, "links": 9, "anchors": 7, "stale": 2}, "problems": []},
+                           "unreviewed": [("b#fresh", "fresh-long")], "ledger_changed": [("b#moved", "was", "now")],
+                           "hints": [("en/a", "en/b", "gone-section", "gone-sections-new"), ("ko/a", "ko/b", "gone-section", "gone-sections-new")]},
                  "nav_mismatch": ["상단 탭: 영어 8개, 한국어 7개라 짝짓지 못함"],
                  "failures": [("https://x/y.md", "HTTP Error 500 | boom")]}
         with tempfile.TemporaryDirectory() as d:
@@ -138,9 +142,16 @@ class LogSections(unittest.TestCase):
                 text = f.read()
         self.assertIn("## 링크 검증", text)
         self.assertIn("페이지 처음으로 연결 1", text)
-        self.assertIn("  - en/a -> en/b#gone", text)
-        self.assertNotIn("ko/a -> ko/b#gone", text)  # 목록은 영어판 기준 (한국어는 같은 링크)
+        self.assertIn("영어판 고유 1건(링크한 페이지 기준 1곳)", text)
+        self.assertIn("  - en/b#gone (1곳)", text)
+        self.assertNotIn("ko/b#gone", text)  # 목록은 영어판 기준 (한국어는 같은 링크)
         self.assertIn("→ #choose-a-delivery-mechanism", text)
+        self.assertIn("독립 검사(결과 HTML 을 다시 읽음): 페이지 4개, 링크 9건(앵커 7건), 끊김 표시 2건 -> 위반 0건", text)
+        self.assertIn("**검토 필요**", text)
+        self.assertIn("새 보정: b#fresh → #fresh-long", text)
+        self.assertIn("장부와 다름: b#moved 장부 #was / 이번 #now", text)
+        self.assertIn("수동 확인 후보 1건", text)  # 영어판 기준 고유 건수 (한국어 중복은 세지 않음)
+        self.assertIn("  - en/b#gone-section ~ #gone-sections-new", text)
         self.assertIn("## 경고: 한국어 메뉴 이름", text)
         self.assertIn("## 수집 실패", text)
         self.assertIn("| https://x/y.md | HTTP Error 500 / boom |", text)  # 표가 깨지지 않게 | 는 /
@@ -168,6 +179,36 @@ class SwapSite(unittest.TestCase):
     def test_first_build_without_site(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(self.read(b.swap_site(d, self.make(d, "new", "x"))), "x")
+
+    def test_transient_lock_is_retried(self):
+        # 브라우저·IDE 가 폴더를 잠깐 잡아 PermissionError 가 몇 번 나도 결국 교체된다
+        with tempfile.TemporaryDirectory() as d:
+            self.make(d, "site", "old")
+            new = self.make(d, "new", "new")
+            real, calls = os.replace, {"n": 0}
+
+            def flaky(src, dst):
+                calls["n"] += 1
+                if calls["n"] <= 3:
+                    raise PermissionError("locked")
+                return real(src, dst)
+
+            with mock.patch.object(b.os, "replace", flaky), mock.patch.object(b.time, "sleep") as sleep:
+                final = b.swap_site(d, new)
+            self.assertEqual(self.read(final), "new")
+            self.assertEqual(sleep.call_count, 3)
+
+    def test_persistent_lock_fails_with_a_helpful_message_and_keeps_old_site(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make(d, "site", "old")
+            new = self.make(d, "new", "new")
+            with mock.patch.object(b.os, "replace", side_effect=PermissionError("locked")), \
+                    mock.patch.object(b.time, "sleep"):
+                with self.assertRaises(PermissionError) as cm:
+                    b.swap_site(d, new)
+            self.assertIn("다른 프로그램", str(cm.exception))
+            self.assertIn("기존 사이트는 그대로", str(cm.exception))
+            self.assertEqual(self.read(os.path.join(d, "site")), "old")  # 첫 이름 변경에서 막혔으니 기존 사이트는 그대로
 
     def test_failure_restores_old_site(self):
         with tempfile.TemporaryDirectory() as d:

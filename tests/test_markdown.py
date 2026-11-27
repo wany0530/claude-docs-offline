@@ -185,8 +185,8 @@ class ResolveAnchor(unittest.TestCase):
 
 class ResolveAnchors(unittest.TestCase):
     def run_resolve(self, body, links):
-        rep = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set()}
-        ids = {"en/b": {"real-one"}, "en/a": {"here"}}
+        rep = {"counts": collections.Counter(), "key": set(), "strict": set(), "stale": set(), "hint": set()}
+        ids = {"en/b": {"real-one", "shorter-than-asked"}, "en/a": {"here"}}
         out = resolve_anchors("en/a", body, links, ids, "STALE TITLE", rep)
         return out, rep
 
@@ -197,6 +197,13 @@ class ResolveAnchors(unittest.TestCase):
         self.assertIn('<a href="b.html" class="stale-anchor" title="STALE TITLE">y</a>', out)  # 앵커를 빼고 페이지 처음으로
         self.assertEqual(rep["counts"]["exact"], 1)
         self.assertEqual(rep["counts"]["stale"], 1)
+
+    def test_stale_link_gets_a_hint_but_is_not_relinked(self):
+        body = '<a href="\x010\x01">x</a>'
+        out, rep = self.run_resolve(body, [("en/b", "enable-shorter-than-asked")])
+        self.assertIn('class="stale-anchor"', out)
+        self.assertNotIn("#shorter", out)  # 힌트일 뿐 링크는 바꾸지 않는다
+        self.assertEqual(rep["hint"], {("en/a", "en/b", "enable-shorter-than-asked", "shorter-than-asked")})
 
     def test_same_page_anchor_links_are_checked_too(self):
         body = '<a href="#here">ok</a> <a href="#nope">bad</a> <h2 id="here">h<a class="anchor" href="#here">#</a></h2>'
