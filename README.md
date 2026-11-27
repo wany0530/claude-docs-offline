@@ -69,7 +69,7 @@ logs/
 | `build_docs_snapshot.py` | 통합 진입점. 수집 → HTML 변환 → `site/` 교체 → 이력·diff 저장 → 로그 |
 | `docs_fetch_json.py` | `llms.txt`에서 페이지 목록을 읽어 영어 원문(.md), 공식 한국어판(`/docs/ko/`), 에셋을 받아 JSON으로 저장 |
 | `docs_json_to_html.py` | JSON(.gz 가능)을 영어·한국어 정적 HTML 사이트로 변환하는 진행 순서 (실제 일은 아래 모듈이 함) |
-| `docs_markdown.py` | 직접 만든 마크다운 → HTML 변환기 (탭·아코디언·카드 컴포넌트 포함) |
+| `docs_markdown.py` | 직접 만든 마크다운 → HTML 변환기의 진입점(`Renderer`). 역할별로 `md_syntax.py`(정규식·순수 함수), `md_inline.py`(인라인·링크), `md_ids.py`(헤딩·아코디언 id), `md_components.py`(탭·아코디언·카드·콜아웃), `md_structures.py`(표·목록), `md_blocks.py`(블록 순회)로 나뉨 |
 | `docs_anchors.py` | 본문의 `#앵커` 링크를 실제 섹션에 맞춰 확정, 검토 장부 대조 |
 | `docs_changes.py` | 두 스냅샷의 변경 계산(로그 요약과 사이트의 변경 내역 페이지가 같은 계산을 씀) |
 | `docs_site.py` | 화면 문구, 메뉴 트리, 주소 표, `site_src/` 파일 읽기 |

@@ -129,6 +129,11 @@ class Components(unittest.TestCase):
         self.assertEqual(html.count('class="card"'), 2)
         self.assertIn('<a href="hooks.html">One</a>', html)
 
+    def test_only_the_first_quote_after_a_title_is_the_lead(self):
+        html, _ = render("# A\n\n> first description\n\n# B\n\n> quote under a second title")
+        self.assertEqual(html.count('<div class="lead">'), 1)  # 설명문 처리는 페이지당 한 번뿐
+        self.assertEqual(html.count("<blockquote>"), 1)
+
     def test_description_after_title_is_plain_lead_not_blockquote(self):
         html, _ = render("# T\n\n> the description\n\nbody\n\n> a real quote")
         self.assertIn('<div class="lead">', html)
