@@ -9,7 +9,7 @@ import re
 import urllib.parse
 from posixpath import dirname as pdirname, relpath as prelpath
 
-from docs_markdown import anchor_key, attr
+from docsnap.markdown import anchor_key, attr
 
 
 def _tokens(s):
@@ -53,7 +53,7 @@ def nearest_id(frag, ids):
     return best
 
 
-LEDGER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reviewed_anchors.json")
+LEDGER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "reviewed_anchors.json")
 
 
 def ledger_key(target, frag):

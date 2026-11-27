@@ -6,9 +6,9 @@ import os
 
 from string import Template
 
-from docs_common import ko_url, norm, slug as url_slug
+from docsnap.common import ko_url, norm, slug as url_slug
 
-SITE_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "site_src")
+SITE_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "site_src")
 JS_PARTS = ("lib.js", "app.js", "search.js", "highlight.js")  # 순서대로 이어 붙여 site/nav.js 가 된다 (lib.js 가 DocsLib 를 먼저 정의)
 
 

@@ -6,7 +6,7 @@
 import html
 import re
 
-from md_syntax import BLOCK_HTML, FENCE, HEAD, HR, HTML_START, ITEM, QUOTE, TABLE_SEP, esc, indent_of
+from .syntax import BLOCK_HTML, FENCE, HEAD, HR, HTML_START, ITEM, QUOTE, TABLE_SEP, esc, indent_of
 
 
 class BlockMixin:

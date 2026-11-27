@@ -10,12 +10,12 @@ Renderer 가 페이지 1개를 HTML 로 바꾸고, 헤딩·아코디언 id 와 �
   md_blocks      BlockMixin      문단·제목·코드 블록·HTML 블록과 블록 순회
 이 모듈은 상태를 소유하고 믹스인을 묶는 파사드다. 기존 import(from docs_markdown import ...)는 그대로 동작한다.
 """
-from md_blocks import BlockMixin
-from md_components import ComponentMixin
-from md_ids import IdMixin
-from md_inline import InlineMixin
-from md_structures import StructureMixin
-from md_syntax import (ALLOWED_TAGS, BLOCK_HTML, anchor_key, attr, esc, esc_text, heading_slug, indent_of, plain_text,  # noqa: F401
+from .blocks import BlockMixin
+from .components import ComponentMixin
+from .ids import IdMixin
+from .inline import InlineMixin
+from .structures import StructureMixin
+from .syntax import (ALLOWED_TAGS, BLOCK_HTML, anchor_key, attr, esc, esc_text, heading_slug, indent_of, plain_text,  # noqa: F401
                        strip_banner)
 
 __all__ = ["Renderer", "ALLOWED_TAGS", "BLOCK_HTML", "anchor_key", "attr", "esc", "esc_text", "heading_slug", "indent_of",

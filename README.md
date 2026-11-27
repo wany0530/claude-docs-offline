@@ -41,7 +41,7 @@ Python 3.9 이상만 있으면 됩니다. 설치할 패키지는 없습니다.
 `output/`과 `logs/`는 git에 올라가지 않으니 직접 실행해서 만드세요.
 
 - 로그에는 결과, 수집 요약, 지난번 대비 변경 요약, 링크 검증 결과가 들어 있습니다.
-- 보관 개수는 `build_docs_snapshot.py`의 `KEEP_HISTORY`로 바꿉니다.
+- 보관 개수는 `docsnap/build.py`의 `KEEP_HISTORY`로 바꿉니다.
 
 ## 실패해도 안전합니다
 

@@ -2,7 +2,7 @@
 
 쓰는 상태: ids, used_ids, head_ids, acc_ids, hint, hint_pos, acc_hint, acc_pos.
 """
-from md_syntax import heading_slug
+from .syntax import heading_slug
 
 
 class IdMixin:

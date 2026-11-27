@@ -4,7 +4,7 @@
 """
 import re
 
-from md_syntax import HR, ITEM, indent_of
+from .syntax import HR, ITEM, indent_of
 
 
 class StructureMixin:

@@ -4,7 +4,7 @@
 """
 import re
 
-from md_syntax import MARKER, QUOTE
+from .syntax import MARKER, QUOTE
 
 
 class ComponentMixin:

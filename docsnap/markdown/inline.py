@@ -6,8 +6,8 @@ import html
 import re
 from posixpath import dirname as pdirname, relpath as prelpath
 
-from docs_common import norm
-from md_syntax import (ALLOWED_TAGS, BARE_URL, CODE_SPAN, DEL, EM, ESCAPED, IMAGE, LINK, STRONG, TAG, URL_ATTR, attr,
+from docsnap.common import norm
+from .syntax import (ALLOWED_TAGS, BARE_URL, CODE_SPAN, DEL, EM, ESCAPED, IMAGE, LINK, STRONG, TAG, URL_ATTR, attr,
                        esc, esc_text)
 
 
