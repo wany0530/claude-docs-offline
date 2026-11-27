@@ -1,6 +1,5 @@
 # claude-docs
 
-[![tests](https://github.com/wany0530/claude-docs-offline/actions/workflows/test.yml/badge.svg)](https://github.com/wany0530/claude-docs-offline/actions/workflows/test.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![stdlib only](https://img.shields.io/badge/dependencies-none-brightgreen)
 [![MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
@@ -138,38 +137,6 @@ python docs_diff.py 2026-11-20 2026-11-27 ko/hooks
 python docs_verify.py output/site
 ```
 
-### 테스트
-
-| 종류 | 명령 |
-|---|---|
-| 단위 (215개, 네트워크 불필요. Node가 있으면 JS 테스트와 파이썬·JS 앵커 규칙 비교 포함) | `python -m unittest discover tests` |
-| 브라우저 E2E (Chromium, 개발용) | `cd tests/e2e && npm ci && npx playwright install chromium && npm test` |
-| 받아 둔 실제 데이터로 불변식 확인 | `DOCS_REAL=1 python -m unittest discover tests -p "test_realdata.py"` (PowerShell: `$env:DOCS_REAL=1`) |
-
-<details>
-<summary>테스트가 확인하는 것, 커버리지, 접근성</summary>
-
-- **단위 테스트**: 마크다운 변환기, 앵커 확정, 수집기(가짜 네트워크), 빌드 전체(성공·실패 경로마다 "기존 사이트는 그대로"), 독립 검증기, 두 언어 사이트 출력.
-- **브라우저 E2E**: 가짜 문서 6쪽으로 만든 고정 사이트에서 메뉴·목차·탭·아코디언 이동·검색·복사·구문 강조·모바일 레이아웃을 확인하고, 서버 없이 `file://`로 여는 경우도 확인합니다. `@playwright/test`는 1.61.1(Chromium 리비전 1228)로 고정돼 있습니다.
-- **접근성**: `axe-core`(WCAG 2 A/AA)가 밝은·어두운 테마, 검색 창, 모바일 상태에서 위반 0건인지 확인하고, 키보드 동작(건너뛰기 링크, 탭 화살표·Home·End, 검색 창 포커스 가두기·Esc)을 확인합니다. 스크린 리더로 직접 확인한 것은 아닙니다.
-- **실제 데이터 불변식**: `output/history`가 있을 때만 켜집니다. 없는 파일 0, 한국어 id 일치, 독립 검사 위반 0, 장부에 없는 새 보정 0과 끊김·보정 수의 느슨한 상한(`tests/real_data_limits.json`)을 봅니다. 업스트림이 바뀌어 새 보정이 생기면 실패하는데, 오류가 아니라 검토 신호입니다.
-
-**커버리지** (개발 전용, `pip install -r requirements-dev.txt`)
-
-```
-python -m coverage run -m unittest discover tests && python -m coverage report   # 파이썬 줄·분기 (하한 95%, .coveragerc)
-node --test --experimental-test-coverage tests/js/*.test.js                       # site_src/lib.js
-cd tests/e2e && npm run coverage                                                  # 사이트 JS: E2E를 돌리며 Chromium으로 측정
-```
-
-커버리지는 "그 줄이 실행됐다"는 뜻이지 "맞다고 확인했다"는 뜻이 아닙니다. 그래서 숫자를 올리려고 테스트를 쓰지 않고, 안 실행된 줄이 실제 동작인지 먼저 읽은 뒤 쓰며, 새 테스트가 정말 어설션하는지 코드를 일부러 망가뜨려 확인합니다(`CLAUDE.md`의 "Mutation check").
-
-</details>
-
-### CI
-
-GitHub Actions(`.github/workflows/test.yml`)가 push와 PR마다 **Python 3.9·3.14 단위 테스트**(3.14에서는 커버리지 포함)와 **Chromium E2E**를 돌립니다. "Python 3.9 이상"이라는 주장은 이 매트릭스가 실제로 확인하고, `tests/test_compat.py`가 로컬에서 빠르게 지키는 정적 방어선입니다. 2026-11-27의 첫 실행에서 전부 통과했습니다. 단 Ubuntu에서만 돌고 macOS·Windows는 확인하지 않았습니다.
-
 ### 콘솔 인코딩
 
 스크립트는 시작할 때 콘솔을 UTF-8·줄 단위 버퍼로 바꿔서 한글이 깨지지 않고 출력 순서도 유지됩니다. 오래된 PowerShell 5.1에서 깨져 보이면 `[Console]::OutputEncoding=[Text.Encoding]::UTF8`을 먼저 실행하세요.
@@ -180,4 +147,3 @@ GitHub Actions(`.github/workflows/test.yml`)가 push와 PR마다 **Python 3.9·3
 - 이 도구는 **비공식**이며 Anthropic과 관련이 없습니다. Claude, Claude Code는 Anthropic의 상표입니다.
 - 공식 문서의 내용과 이미지의 저작권은 Anthropic에 있습니다. 생성된 `output/`은 개인 열람용으로만 쓰고 재배포하지 마세요.
 - 이 저장소는 문서 사본을 담지 않고 수집 도구만 담습니다. 로그의 변경 요약에는 바뀐 줄의 일부(줄당 최대 140자)가 인용될 수 있으나 로그도 git에는 올라가지 않습니다.
-- 이 저장소에서 Claude Code로 작업할 때의 상세 지침은 [`CLAUDE.md`](CLAUDE.md)(영문)에 있습니다.
