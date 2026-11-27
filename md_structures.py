@@ -33,7 +33,7 @@ class StructureMixin:
             a = f' style="text-align:{aligns[k]}"' if k < len(aligns) and aligns[k] else ""
             return f"<{tag}{a}>{self.inline(text)}</{tag}>"
 
-        out = ["<div class=\"table-wrap\"><table><thead><tr>"]
+        out = ["<div class=\"table-wrap\" tabindex=\"0\"><table><thead><tr>"]
         out += [cell("th", c, k) for k, c in enumerate(head)]
         out.append("</tr></thead><tbody>")
         for r in rows:

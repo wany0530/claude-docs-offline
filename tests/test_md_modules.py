@@ -120,3 +120,11 @@ class InlineMixinAlone(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TableFocusTest(unittest.TestCase):
+    def test_table_wrapper_is_keyboard_focusable(self):
+        # 좁은 화면에서 표가 가로로 스크롤되면 키보드로 닿을 수 있어야 한다(axe: scrollable-region-focusable)
+        from docs_markdown import Renderer
+        html = Renderer("a", {}, {}).render("| a | b |\n|---|---|\n| 1 | 2 |\n")
+        self.assertIn('<div class="table-wrap" tabindex="0">', html)
