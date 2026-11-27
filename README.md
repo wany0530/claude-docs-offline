@@ -105,7 +105,17 @@ cd tests/e2e && npm ci && npx playwright install chromium && npm test    # 브�
 DOCS_REAL=1 python -m unittest discover tests -p "test_realdata.py"      # 받아 둔 실제 데이터로 불변식 확인 (PowerShell: $env:DOCS_REAL=1)
 ```
 
-- **단위 테스트**(약 110개): 마크다운 변환기, 앵커 확정, 수집기(가짜 네트워크), 빌드 전체(`build_docs_snapshot.main`을 가짜 수집기로 돌려 성공·실패 경로마다 "기존 사이트는 그대로"를 확인), 독립 검증기, 두 언어 사이트 출력. Node가 있으면 `tests/js/`의 `site_src/lib.js` 테스트(`node --test`)와 파이썬·JS 앵커 규칙 비교도 함께 돕니다.
+커버리지(개발 전용, `pip install -r requirements-dev.txt`):
+
+```
+python -m coverage run -m unittest discover tests && python -m coverage report   # 파이썬 줄·분기 (하한 95%, .coveragerc)
+node --test --experimental-test-coverage tests/js/*.test.js                       # site_src/lib.js
+cd tests/e2e && npm run coverage                                                  # 사이트 JS(app·search·highlight): E2E를 돌리며 Chromium으로 측정
+```
+
+커버리지는 "그 줄이 실행됐다"는 뜻이지 "맞다고 확인했다"는 뜻이 아닙니다. 그래서 숫자를 올리려고 테스트를 쓰지 않고, 안 실행된 줄이 실제 동작인지 먼저 읽은 뒤 쓰며, 새 테스트가 정말 어설션하는지 코드를 일부러 망가뜨려 확인합니다(CLAUDE.md의 "Mutation check").
+
+- **단위 테스트**(약 210개): 마크다운 변환기, 앵커 확정, 수집기(가짜 네트워크), 빌드 전체(`build_docs_snapshot.main`을 가짜 수집기로 돌려 성공·실패 경로마다 "기존 사이트는 그대로"를 확인), 독립 검증기, 두 언어 사이트 출력. Node가 있으면 `tests/js/`의 `site_src/lib.js` 테스트(`node --test`)와 파이썬·JS 앵커 규칙 비교도 함께 돕니다.
 - **브라우저 E2E**(`tests/e2e`, Chromium, 개발할 때만 필요): 가짜 문서 6쪽으로 만든 고정 사이트를 열어 메뉴·목차·탭·아코디언 이동·검색·복사·구문 강조·모바일 레이아웃을 확인하고, 서버 없이 `file://`로 여는 경우도 확인합니다. 도구 자체는 계속 표준 라이브러리만 씁니다. `@playwright/test`는 1.61.1로 고정돼 있어 Chromium 리비전 1228을 씁니다.
 - **접근성**: 키보드만으로 쓸 수 있게 '본문으로 건너뛰기' 링크, 포커스 윤곽선, 본문 탭의 WAI-ARIA 패턴(화살표·Home·End), 검색 창의 포커스 가두기와 화살표 이동·Esc 복귀를 넣었고, `axe-core`(WCAG 2 A/AA)가 밝은·어두운 테마, 검색 창, 모바일 상태에서 위반 0건인지 E2E로 확인합니다. 한계: 스크린 리더로 직접 들어 본 것은 아니고(자동 검사와 키보드 동작만 확인), 색 대비는 axe가 판정한 요소만 보장합니다.
 - **실제 데이터 불변식**: `output/history`가 있을 때만 켜지며(기본은 건너뜀), 없는 파일 0, 한국어 id 일치, 독립 검사 위반 0, 장부에 없는 새 보정 0과 끊김·보정 수의 느슨한 상한(`tests/real_data_limits.json`)을 확인합니다. 업스트림이 바뀌어 새 보정이 생기면 실패하는데, 이는 오류가 아니라 검토 신호입니다.

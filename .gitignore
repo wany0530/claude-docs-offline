@@ -6,6 +6,9 @@ __pycache__/
 reference/
 logs/
 node_modules/
+.coverage
+unit.log
+coverage.txt
 tests/e2e/.site/
 tests/e2e/test-results/
 tests/e2e/playwright-report/

@@ -3,7 +3,8 @@
   "private": true,
   "description": "Browser E2E tests for the offline docs site (development only; the tool itself needs no packages)",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "coverage": "node run-js-coverage.js"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.1",

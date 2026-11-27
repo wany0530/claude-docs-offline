@@ -145,10 +145,32 @@ for (const lang of ["en", "ko"]) {
       await expect(btn).toHaveText(t.copied);
       await expect(btn.locator("svg")).toHaveCount(1); // 잠시 뒤 아이콘으로 돌아온다
 
+      const label = page.locator("#copypage span");
+      const original = await label.textContent();
       await page.locator("#copypage").click();
       const md = await page.evaluate(() => window.__copied);
       expect(md).toContain(lang === "en" ? "# Guide" : "# 가이드");
       expect(md).not.toContain("Documentation Index"); // 안내 배너는 빠진 원문
+      await expect(label).toHaveText(t.copied);
+      await expect(label).toHaveText(original); // 잠시 뒤 원래 글자로 돌아온다
+    });
+
+    test("클립보드 API 가 없는 환경에서는 execCommand 로 복사한다", async ({ page }) => {
+      // 일부 브라우저는 file:// 이나 비보안 문맥에서 navigator.clipboard 를 주지 않는다
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+        document.execCommand = (cmd) => {
+          const ta = document.querySelector("textarea"); // 복사 폴백이 잠깐 만들어 선택해 둔 입력칸
+          window.__copied = cmd === "copy" && ta ? ta.value : null;
+          return true;
+        };
+      });
+      await page.reload();
+      await page.locator("pre[data-lang='json'] button.copy").click();
+      expect(await page.evaluate(() => window.__copied)).toBe('{"name": "demo", "count": 3, "ok": true}');
+      await page.locator("#copypage").click();
+      expect(await page.evaluate(() => window.__copied)).toContain(lang === "en" ? "# Guide" : "# 가이드");
+      await expect(page.locator("textarea")).toHaveCount(0); // 임시 입력칸은 치운다
     });
 
     test("검색: 열기, 결과, 강조, 이동, 닫기, 일치 없음", async ({ page }) => {
@@ -194,6 +216,25 @@ for (const lang of ["en", "ko"]) {
     });
   });
 }
+
+test.describe("검색 색인을 읽지 못했을 때", () => {
+  test.use({ allowedConsoleErrors: [/search-data-\w+\.js/] }); // 색인 요청을 일부러 실패시키므로 그 콘솔 오류는 예상된 것
+
+  for (const [lang, message] of [["en", "Search index not found."], ["ko", "검색 색인을 찾을 수 없습니다."]]) {
+    test(`${lang}: 오류 메시지를 보여 주고 다시 시도할 수 있다`, async ({ page }) => {
+      let attempts = 0;
+      await page.route(/search-data-\w+\.js$/, (route) => (++attempts === 1 ? route.fulfill({ status: 404, body: "" }) : route.continue()));
+      await page.goto(`/${lang}/guide.html`);
+      await page.keyboard.press("Control+k");
+      const term = T[lang].search; // 그 언어 색인에 있는 단어
+      await page.locator("#searchmodal input").fill(term);
+      await expect(page.locator("#results")).toHaveText(message);
+      await page.locator("#searchmodal input").fill(term.slice(0, -1)); // 다시 입력하면 색인을 다시 받는다 (첫 실패가 영구 상태가 아님)
+      await expect(page.locator("#searchmodal a.hit").first()).toBeVisible();
+      expect(attempts).toBe(2);
+    });
+  }
+});
 
 test("한국어판이 없는 페이지는 영어 원문과 안내 문구를 보여 준다", async ({ page }) => {
   await page.goto("/ko/nokorean.html");

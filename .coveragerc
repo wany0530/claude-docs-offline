@@ -1,0 +1,17 @@
+# 줄·분기 커버리지 설정 (개발 전용). 실행: coverage run -m unittest discover tests && coverage report
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    .venv/*
+    node_modules/*
+
+[report]
+# 퇴행을 막는 하한이지 목표가 아니다 (측정값은 99% 안팎). CI 의 Python 3.9 분기 측정 차이를 감안해 여유를 뒀다.
+fail_under = 95
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
