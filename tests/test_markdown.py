@@ -90,6 +90,52 @@ class Inline(unittest.TestCase):
         self.assertNotIn("<script>", html)
 
 
+class Components(unittest.TestCase):
+    def test_consecutive_tabs_form_one_group_and_nest(self):
+        html, _ = render("> [tab] A\n>\n> outer\n>\n> > [tab] in1\n> >\n> > x\n>\n> > [tab] in2\n> >\n> > y\n\n> [tab] B\n>\n> second")
+        self.assertEqual(html.count('class="tabs"'), 2)
+        self.assertEqual(html.count("tab-btn"), 4)  # 바깥 A,B + 안쪽 in1,in2
+        self.assertEqual(html.count('class="tab-panel active"'), 2)  # 그룹마다 첫 탭만 열림
+        self.assertIn("second", html)
+
+    def test_separate_tab_groups_do_not_merge(self):
+        html, _ = render("> [tab] A\n>\n> a\n\ntext between\n\n> [tab] B\n>\n> b")
+        self.assertEqual(html.count('class="tabs"'), 2)
+
+    def test_accordion(self):
+        html, _ = render("> [accordion] Title **x**\n>\n> hidden text")
+        self.assertIn('<details class="accordion"><summary>Title <strong>x</strong></summary>', html)
+
+    def test_cards_grouped_with_links(self):
+        md = ("> [card] [One](https://code.claude.com/docs/en/hooks.md)\n>\n> desc one\n\n"
+              "> [card] [Two](https://example.com)\n>\n> desc two")
+        html, r = render(md, slug="en/x")
+        self.assertEqual(html.count('class="cards"'), 1)
+        self.assertEqual(html.count('class="card"'), 2)
+        self.assertIn('<a href="hooks.html">One</a>', html)
+
+    def test_description_after_title_is_plain_lead_not_blockquote(self):
+        html, _ = render("# T\n\n> the description\n\nbody\n\n> a real quote")
+        self.assertIn('<div class="lead">', html)
+        self.assertEqual(html.count("<blockquote>"), 1)  # 본문 중간의 인용문은 그대로
+
+
+class HeadingHint(unittest.TestCase):
+    def test_ids_borrowed_from_other_language(self):
+        _, en = render("# Title\n\n## Setup\n\n### Deep")
+        ko = Renderer("ko/page", TARGETS, {}, hint=en.head_ids)
+        html = ko.render("# 제목\n\n## 설정\n\n### 깊은")
+        self.assertIn('id="setup"', html)
+        self.assertIn('id="deep"', html)
+        self.assertEqual(ko.hint_pos, 3)
+
+    def test_level_mismatch_falls_back_to_own_slug(self):
+        ko = Renderer("ko/page", TARGETS, {}, hint=[(1, "title"), (2, "setup")])
+        html = ko.render("# 제목\n\n### 다른 레벨\n\n## 설정")
+        self.assertIn('id="title"', html)
+        self.assertNotIn('id="setup"', html)  # 어긋난 뒤로는 기본 규칙 (한국어 slug)
+
+
 class Anchor(unittest.TestCase):
     def test_anchor_key(self):
         self.assertEqual(anchor_key("What%27s-New.v2"), "whatsnewv2")

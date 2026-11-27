@@ -110,16 +110,65 @@ class History(unittest.TestCase):
             self.assertEqual(b.history_dates(d), days[2:])
             self.assertFalse(os.path.exists(os.path.join(d, "history", days[0] + ".diff")))
 
-    def test_prune_snapshots(self):
+    def test_remove_legacy_dirs_keeps_history_and_site(self):
         with tempfile.TemporaryDirectory() as d:
-            for day in ("2026-01-01", "2026-01-02", "2026-01-03"):
+            for day in ("2026-01-01", "2026-01-02"):
                 os.makedirs(os.path.join(d, day))
-            os.makedirs(os.path.join(d, "history"))  # 스냅샷 정리 대상이 아니다
-            self.assertEqual(b.prune(d, 1), ["2026-01-01", "2026-01-02"])
+            for keep in ("history", "site"):  # 옛 날짜 폴더만 대상이다
+                os.makedirs(os.path.join(d, keep))
+            self.assertEqual(b.remove_legacy_dirs(d), ["2026-01-01", "2026-01-02"])
             self.assertTrue(os.path.isdir(os.path.join(d, "history")))
+            self.assertTrue(os.path.isdir(os.path.join(d, "site")))
+            self.assertFalse(os.path.exists(os.path.join(d, "2026-01-01")))
+
+
+class SwapSite(unittest.TestCase):
+    def make(self, root, name, text):
+        os.makedirs(os.path.join(root, name))
+        with open(os.path.join(root, name, "marker.txt"), "w") as f:
+            f.write(text)
+        return os.path.join(root, name)
+
+    def read(self, path):
+        with open(os.path.join(path, "marker.txt")) as f:
+            return f.read()
+
+    def test_replaces_existing_site(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make(d, "site", "old")
+            new = self.make(d, "new", "new")
+            final = b.swap_site(d, new)
+            self.assertEqual(self.read(final), "new")
+            self.assertFalse(os.path.exists(os.path.join(d, "site.old")))
+
+    def test_first_build_without_site(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.read(b.swap_site(d, self.make(d, "new", "x"))), "x")
+
+    def test_failure_restores_old_site(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make(d, "site", "old")
+            with self.assertRaises(Exception):
+                b.swap_site(d, os.path.join(d, "does-not-exist"))
+            self.assertEqual(self.read(os.path.join(d, "site")), "old")
 
 
 class DiffTool(unittest.TestCase):
+    def test_korean_pages_compared_only_when_both_have_ko(self):
+        def with_ko(slug, en, ko):
+            p = page(slug, en)
+            p["ko"] = {"title": "t", "description": "", "content": ko}
+            return p
+        old = snap("1", with_ko("en/a", "same", "옛 한글"))
+        new = snap("2", with_ko("en/a", "same", "새 한글"))
+        chunks = docs_diff.diff_snapshots(old, new)
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("=== ko/a", chunks[0])
+        # 옛 이력에 한국어 데이터가 없으면 한국어는 건너뛴다 (220개가 전부 '새 페이지'로 쏟아지지 않게)
+        self.assertEqual(docs_diff.diff_snapshots(snap("1", page("en/a", "same")), new), [])
+        self.assertEqual(len(docs_diff.diff_snapshots(old, new, "ko/a")), 1)
+        self.assertEqual(docs_diff.diff_snapshots(old, new, "en/a"), [])
+
     def test_only_filter_and_removed_page(self):
         old = snap("1", page("en/a", "x"), page("en/b", "y"))
         new = snap("2", page("en/a", "x2"))

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Claude Code 공식 문서 전체를 하나의 JSON 파일로 저장합니다.
+"""Claude Code 공식 문서 전체(영어 + 공식 한국어판)를 하나의 JSON 파일로 저장합니다.
 
-사용법:  python docs_fetch_json.py [출력파일.json]
+사용법:  python docs_fetch_json.py [출력파일.json [에셋폴더]]
 저장 내용: 페이지별 분류(category) / 본문(content, 원문 그대로) / 좌측 메뉴 이름(nav_label) /
-           본문 이미지·동영상(출력 JSON 옆 assets/ 폴더) / 숨은 페이지(_unlisted) / 옛 링크 별칭(redirects)
+           공식 한국어판(ko: 제목·설명·본문·메뉴 이름. 번역이 아니라 /docs/ko/ 원문이며, 없으면 null) /
+           본문 이미지·동영상(에셋폴더, 기본은 출력 JSON 옆 assets/) / 숨은 페이지(_unlisted) / 옛 링크 별칭(redirects)
 외부 패키지 없이 표준 라이브러리만 사용합니다.
 """
 import hashlib
@@ -19,13 +20,16 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from docs_common import norm, setup_console, slug
+from docs_common import ko_url, norm, setup_console, slug
 
 INDEX_URL = "https://code.claude.com/docs/llms.txt"
 LINK_RE = re.compile(r"-\s*\[([^\]]+)\]\((https://code\.claude\.com/docs/[^)\s]+?\.md)\)(?::\s*(.*))?")
 HEAD_RE = re.compile(r"^(#{2,6})\s+(.*)")
-LABEL_RE = re.compile(r'<li id="/(en/[^"]+)"[^>]*data-title="([^"]*)"')  # 사이트 HTML 좌측 메뉴
-GROUP_RE = re.compile(r'<li[^>]*data-title="([^"]*)"[^>]*\bid="/(en/[^"]+)"')  # 접히는 그룹 제목 (id 가 뒤에 옴)
+LABEL_RE = re.compile(r'<li id="/((?:en|ko)/[^"]+)"[^>]*data-title="([^"]*)"')  # 사이트 HTML 좌측 메뉴
+GROUP_RE = re.compile(r'<li[^>]*data-title="([^"]*)"[^>]*\bid="/((?:en|ko)/[^"]+)"')  # 접히는 그룹 제목 (id 가 뒤에 옴)
+TAB_RE = re.compile(r'nav-tabs-item group[^>]*>(.*?)</(?:a|button)>', re.S)  # 상단 탭 이름 (현재 탭은 button, 나머지는 a)
+SUB_RE = re.compile(r'<li data-title="([^"]*)" data-group-tag')  # 사이드바의 접히는 하위 그룹 (id 없음, 문서 순서로 짝지음)
+GROUPH_RE = re.compile(r'sidebar-group-header[^>]*>(.*?)</div>', re.S)  # 사이드바 그룹 제목
 DOC_LINK_RE =re.compile(r"\]\((https://code\.claude\.com/docs/[^)\s]+)")
 ASSET_RE = re.compile(r"https://mintcdn\.com/[^\s)\"'<>]+")
 UA = {"User-Agent": "docs-snapshot/1.0"}
@@ -112,40 +116,129 @@ def resolve_links(pages):
                 unresolved[link] = str(e)
 
 
-def add_nav_labels(pages):
-    """사이트 HTML 좌측 메뉴의 표시 이름을 nav_label 로 저장 (없으면 title)."""
+def _clean(x):
+    return html.unescape(re.sub(r"<[^>]+>", "", x)).strip()
+
+
+def scan_nav(url):
+    """사이트 HTML 한 장에서 (메뉴 이름 {slug: 이름}, 상단 탭 이름들, 사이드바 그룹 제목들, 하위 그룹 이름들)을 읽는다. 실패하면 빈 값."""
+    try:
+        _, _, page = _open(norm(url))
+    except Exception:
+        return {}, [], [], []
     labels = {}
+    for s, label in LABEL_RE.findall(page):
+        labels[s] = html.unescape(label)
+    for label, s in GROUP_RE.findall(page):
+        labels.setdefault(s, html.unescape(label))
+    uniq = lambda xs: list(dict.fromkeys(x for x in map(_clean, xs) if x))
+    return labels, uniq(TAB_RE.findall(page)), uniq(GROUPH_RE.findall(page)), [html.unescape(x) for x in SUB_RE.findall(page)]
 
-    def harvest(url):
-        try:
-            _, _, page = _open(norm(url))
-        except Exception:
-            return
-        for s, label in LABEL_RE.findall(page):
-            labels[s] = html.unescape(label)
-        for label, s in GROUP_RE.findall(page):
-            labels.setdefault(s, html.unescape(label))
 
-    listed = [p for p in pages if p["category"][0] != "_unlisted"]
+def add_nav_labels(pages, lang="en"):
+    """사이트 HTML 좌측 메뉴의 표시 이름을 nav_label 로 저장 (없으면 title).
+
+    lang="ko" 이면 각 페이지의 ko 항목(있는 것만)에 저장한다.
+    (메뉴 이름 {slug: 이름}, 상단 탭 이름들, {탭: 그룹 제목들}, {탭: 하위 그룹 이름들}, 이름을 못 찾은 제목들)을 돌려준다.
+    """
+    def target(p):  # lang 별로 메뉴 이름을 저장할 dict
+        return p if lang == "en" else p.get("ko")
+
+    def page_url(p):
+        return p["url"] if lang == "en" else ko_url(p["url"])
+
+    labels, tabs, groups, subs = {}, [], {}, {}
+    listed = [p for p in pages if p["category"][0] != "_unlisted" and target(p)]
     firsts = {}
     for p in listed:
         firsts.setdefault(p["category"][0], p)  # 대분류(상단 탭)마다 첫 페이지의 HTML 에 그 탭 메뉴 전체가 있음
     with ThreadPoolExecutor(max_workers=8) as ex:
-        list(ex.map(harvest, [p["url"] for p in firsts.values()]))
+        scans = list(ex.map(lambda p: scan_nav(page_url(p)), firsts.values()))
+    for (tab, _), (lab, tb, gr, sb) in zip(firsts.items(), scans):
+        labels.update(lab)
+        tabs = tabs or tb
+        groups[tab], subs[tab] = gr, sb
     for p in listed:  # 위에서 못 찾은 페이지는 자기 HTML 에서 직접 찾음
-        if slug(p["url"]) not in labels:
-            harvest(p["url"])
-    fallback = [p["title"] for p in pages if slug(p["url"]) not in labels]
+        if slug(page_url(p)) not in labels:
+            labels.update(scan_nav(page_url(p))[0])
+    fallback = []
     for p in pages:
-        p["nav_label"] = labels.get(slug(p["url"]), p["title"])
-    return fallback
+        t = target(p)
+        if not t:
+            continue
+        name = labels.get(slug(page_url(p)))
+        if name is None:
+            fallback.append(t["title"])
+        t["nav_label"] = name or t["title"]
+    return labels, tabs, groups, subs, fallback
+
+
+def fetch_korean(pages):
+    """각 페이지의 공식 한국어판(/docs/ko/<slug>.md)을 받아 p["ko"] 에 저장한다 (번역이 아니라 공식 원문).
+
+    한국어판이 없으면(공식 사이트가 다른 주소로 넘김, 404) p["ko"] = None. 그 밖의 네트워크 오류는 p["ko_error"] 에 기록한다.
+    """
+    def one(p):
+        u = ko_url(p["url"])
+        err = None
+        for attempt in range(3):
+            try:
+                final, ctype, body = _open(u)
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return None, None
+                err = str(e)
+            except Exception as e:
+                err = str(e)
+            else:
+                if "text/html" in ctype or not final.startswith("https://code.claude.com/docs/ko/"):
+                    return None, None  # 한국어판 없이 다른 주소(GitHub, claude.com)로 넘어감
+                return body, None
+            time.sleep(2 ** attempt)
+        return None, err
+
+    def work(p):
+        body, err = one(p)
+        p["ko"] = None
+        if err:
+            p["ko_error"] = err
+        elif body is not None:
+            m = re.search(r"^# (.+)\n\n> (.+)$", body, re.M)
+            p["ko"] = {"title": m.group(1).strip() if m else p["title"],
+                       "description": m.group(2).strip() if m else "", "content": body}
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(work, pages))
+
+
+def korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs):
+    """영어 메뉴 이름 -> 한국어 사이트가 쓰는 같은 자리의 이름. 탭·그룹·하위 그룹 이름을 번역 없이 공식 사이트에서 짝지어 얻는다."""
+    names = {}
+    if len(en_tabs) == len(ko_tabs):
+        names.update(zip(en_tabs, ko_tabs))
+    for en_map, ko_map in ((en_groups, ko_groups), (en_subs, ko_subs)):  # 같은 탭의 첫 페이지에서 같은 순서로 나오는 이름끼리
+        for tab, en_g in en_map.items():
+            ko_g = ko_map.get(tab, [])
+            if len(en_g) == len(ko_g):
+                for a, b in zip(en_g, ko_g):
+                    names.setdefault(a, b)
+    for key, en_name in en_labels.items():  # 같은 slug 의 메뉴 항목(하위 그룹 포함): en/X <-> ko/X
+        ko_name = ko_labels.get("ko/" + key[3:])
+        if ko_name:
+            names.setdefault(en_name, ko_name)
+    return {k: v for k, v in names.items() if k != v}
+
+
+def _all_text(p):
+    """에셋 수집용: 영어 본문과 (있으면) 한국어 본문."""
+    return (p["content"] or "") + "\n" + ((p.get("ko") or {}).get("content") or "")
 
 
 def download_assets(pages, assets_dir):
     """본문의 mintcdn 이미지·동영상을 받아 assets_dir 에 저장. 페이지에 {원격 URL: 'assets/파일'} 기록."""
     names = {}
     for p in pages:
-        for u in ASSET_RE.findall(p["content"] or ""):
+        for u in ASSET_RE.findall(_all_text(p)):
             base = re.sub(r"[^\w.\-]", "_", urllib.parse.unquote(urllib.parse.urlparse(u).path.rsplit("/", 1)[-1]))
             names[u] = hashlib.sha1(u.encode()).hexdigest()[:10] + "_" + base
     os.makedirs(assets_dir, exist_ok=True)
@@ -162,7 +255,7 @@ def download_assets(pages, assets_dir):
     with ThreadPoolExecutor(max_workers=8) as ex:
         list(ex.map(save, names.items()))
     for p in pages:
-        p["assets"] = {u: "assets/" + names[u] for u in dict.fromkeys(ASSET_RE.findall(p["content"] or ""))
+        p["assets"] = {u: "assets/" + names[u] for u in dict.fromkeys(ASSET_RE.findall(_all_text(p)))
                        if u not in errors}
     return len(names), errors
 
@@ -171,7 +264,8 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     out = argv[0] if argv else os.path.join(date.today().isoformat(), "docs.json")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    assets_dir = os.path.join(os.path.dirname(os.path.abspath(out)), "assets")  # JSON 옆 assets/
+    # 에셋 폴더: 두 번째 인자(예: 사이트의 assets/), 없으면 JSON 옆 assets/
+    assets_dir = os.path.abspath(argv[1]) if len(argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(out)), "assets")
 
     entries = parse_index()
     print(f"페이지 {len(entries)}개 발견", file=sys.stderr)
@@ -188,14 +282,21 @@ def main(argv=None):
         pages = list(ex.map(fetch, entries))
 
     redirects, unresolved, endpoints = resolve_links(pages)
-    no_label = add_nav_labels(pages)
+    fetch_korean(pages)
+    en_labels, en_tabs, en_groups, en_subs, no_label = add_nav_labels(pages)
+    ko_labels, ko_tabs, ko_groups, ko_subs, _ = add_nav_labels(pages, "ko")
+    nav_names_ko = korean_names(en_labels, ko_labels, en_tabs, ko_tabs, en_groups, ko_groups, en_subs, ko_subs)
     n_assets, asset_errors = download_assets(pages, assets_dir)
 
     failed = [p["url"] for p in pages if p["content"] is None]
+    ko_failed = {p["url"]: p["ko_error"] for p in pages if p.get("ko_error")}
     snapshot = {
         "source": INDEX_URL,
         "fetched_at": date.today().isoformat(),
         "page_count": len(pages),
+        "languages": ["en", "ko"],  # ko = 공식 한국어판 원문(번역 아님). 한국어판이 없는 페이지는 p["ko"] 가 null
+        "nav_names_ko": nav_names_ko,  # 영어 탭·그룹 이름 -> 한국어 사이트의 같은 이름
+        "ko_errors": ko_failed,
         "redirects": redirects,  # 본문 링크(.md·# 제거) -> 실제 수집된 페이지 url
         "unresolved_links": unresolved,
         "non_page_links": endpoints,  # 문서 페이지가 아닌 링크(MCP 서버 등): 수집 대상 아님
@@ -209,6 +310,9 @@ def main(argv=None):
     print(f"별칭 {len(redirects)}개, 숨은 페이지 {sum(p['category'][0] == '_unlisted' for p in pages)}개, "
           f"메뉴 이름 없음(title 사용) {len(no_label)}개, 미확인 링크 {len(unresolved)}개, "
           f"비문서 링크 {len(endpoints)}개", file=sys.stderr)
+    n_ko = sum(1 for p in pages if p.get("ko"))
+    print(f"한국어판 {n_ko}개 수집, 없음(영어 원문 대체) {len(pages) - n_ko - len(ko_failed)}개, 실패 {len(ko_failed)}개, "
+          f"탭·그룹 이름 {len(nav_names_ko)}개", file=sys.stderr)
     print(f"에셋 {n_assets}개 -> {assets_dir} (실패 {len(asset_errors)}개)", file=sys.stderr)
     for u in failed:
         print("  실패:", u, file=sys.stderr)
@@ -216,6 +320,11 @@ def main(argv=None):
         print("  확인 필요:", u, "-", e, file=sys.stderr)
     for t in no_label:
         print("  메뉴 이름 없음:", t, file=sys.stderr)
+    for u, e in ko_failed.items():
+        print("  한국어판 수집 실패:", u, "-", e, file=sys.stderr)
+    for p in pages:
+        if p.get("ko") is None and not p.get("ko_error"):
+            print("  한국어판 없음:", slug(p["url"]), file=sys.stderr)
 
 
 if __name__ == "__main__":

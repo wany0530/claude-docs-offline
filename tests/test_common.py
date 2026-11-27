@@ -1,7 +1,7 @@
 import unittest
 
 import _path  # noqa: F401
-from docs_common import norm, setup_console, slug
+from docs_common import ko_url, norm, setup_console, slug
 
 
 class NormSlug(unittest.TestCase):
@@ -11,6 +11,10 @@ class NormSlug(unittest.TestCase):
 
     def test_slug(self):
         self.assertEqual(slug("https://code.claude.com/docs/en/agent-sdk/mcp.md"), "en/agent-sdk/mcp")
+
+    def test_ko_url_only_swaps_language_prefix(self):
+        self.assertEqual(ko_url("https://code.claude.com/docs/en/a/b.md"), "https://code.claude.com/docs/ko/a/b.md")
+        self.assertEqual(ko_url("https://code.claude.com/docs/mcp"), "https://code.claude.com/docs/mcp")
 
     def test_setup_console_is_safe(self):
         setup_console()  # 예외 없이 끝나야 한다 (캡처된 스트림에서도)

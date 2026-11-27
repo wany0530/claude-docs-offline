@@ -13,6 +13,11 @@ def slug(url):
     return norm(url).split("/docs/", 1)[1]  # 예: en/agent-teams
 
 
+def ko_url(url):
+    """영어 문서 주소(.../docs/en/X.md)에 해당하는 공식 한국어판 주소(.../docs/ko/X.md). 번역이 아니라 공식 사이트의 주소 규칙."""
+    return url.replace("/docs/en/", "/docs/ko/", 1)
+
+
 def setup_console():
     """파이프·리다이렉트에서도 한글이 깨지지 않고 출력 순서가 섞이지 않게 한다.
 

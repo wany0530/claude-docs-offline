@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Claude Code 공식 문서를 지금(오늘 날짜) 기준으로 다시 수집해 스냅샷을 갱신합니다.
+"""Claude Code 공식 문서(영어 + 공식 한국어판)를 지금(오늘 날짜) 기준으로 다시 수집해 오프라인 사이트를 갱신합니다.
 
 사용법:  (인터넷 연결 후)  python build_docs_snapshot.py [출력폴더] [로그폴더]
          기본값은 이 스크립트가 있는 폴더의 output/ 과 logs/ 입니다 (어디서 실행해도 같음).
-결과:    <출력폴더>/YYYY-MM-DD/{docs.json, assets/, html/}   스냅샷 1회분이 날짜 폴더 하나에 모임 (html/ = 오프라인 HTML 사이트)
-         <출력폴더>/index.html    항상 최신 스냅샷의 HTML 로 이동하는 바로가기
-         <로그폴더>/YYYY/YYYY-MM-DD_HHMMSS.log   실행 1회당 로그 1개: 결과, 수집 요약, 직전 스냅샷 대비 변경 요약,
+결과:    <출력폴더>/site/         최신 오프라인 사이트 1벌 (en/ ko/ assets/ ...). 브라우저로 여는 유일한 사본
+         <출력폴더>/index.html    site/ 로 이동하는 바로가기
+         <출력폴더>/history/YYYY-MM-DD.json.gz   그날의 원본 데이터(docs.json) 1벌. 최근 KEEP_HISTORY 회분만 보관
+         <출력폴더>/history/YYYY-MM-DD.diff      직전 이력 대비 바뀐 페이지의 전체 diff (변경이 있을 때만)
+         <로그폴더>/YYYY/YYYY-MM-DD_HHMMSS.log   실행 1회당 로그 1개: 결과, 수집 요약, 직전 이력 대비 변경 요약,
                                                 구역별 역할 설명, 콘솔 출력
-최신 스냅샷만 남기고 이전 것은 정리합니다 (KEEP_SNAPSHOTS). 대신 날짜별 docs.json 을 <출력폴더>/history/YYYY-MM-DD.json.gz 로
-         최근 KEEP_HISTORY 회분 보관하고, 직전 이력 대비 전체 diff 를 history/YYYY-MM-DD.diff 에 저장합니다.
-         직전과의 차이 요약은 그 회차의 로그에 남습니다. 임의의 두 날짜 비교는 docs_diff.py 를 쓰세요.
+임의의 두 날짜 비교는 docs_diff.py 를 쓰세요.
 
-안전장치: 인터넷이 안 되면 스냅샷은 건드리지 않고 종료합니다(로그 파일만 남음). 빌드는 <출력폴더>/.building 에서
-하고, 모든 페이지 수집과 변환이 성공했을 때만 결과를 옮기고 이전 스냅샷을 지웁니다. 표준 라이브러리만 사용합니다.
+안전장치: 인터넷이 안 되면 기존 사이트는 건드리지 않고 종료합니다(로그 파일만 남음). 빌드는 <출력폴더>/.building 에서
+하고, 모든 페이지 수집(영어·한국어)과 변환이 성공했을 때만 site/ 를 교체합니다. 표준 라이브러리만 사용합니다.
 """
 import gzip
 import io
@@ -29,13 +29,13 @@ import docs_fetch_json
 import docs_json_to_html
 from docs_common import setup_console
 
-KEEP_SNAPSHOTS = 1  # 남겨둘 스냅샷(날짜) 개수. 1 = 최신 것만. 다음 비교의 기준이 되므로 최소 1.
-KEEP_HISTORY = 30  # 남겨둘 이력(날짜별 docs.json.gz 와 .diff) 개수. 오래된 것부터 지운다.
+KEEP_HISTORY = 30  # 남겨둘 이력(날짜별 docs.json.gz 와 .diff) 개수. 오래된 것부터 지운다. 다음 비교의 기준이 되므로 최소 1.
 HISTORY_DIR = "history"
+SITE_DIR = "site"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUT = os.path.join(HERE, "output")  # 실행 위치와 무관하게 스크립트 폴더 기준
 DEFAULT_LOGS = os.path.join(HERE, "logs")
-SNAP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")  # 스냅샷 폴더 이름
+SNAP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")  # 옛 구조의 날짜 폴더 이름 (이전 버전이 만든 output/YYYY-MM-DD/)
 HIST_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.json\.gz$")  # 이력 파일 이름
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 HEAD_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -151,16 +151,16 @@ LOG_GUIDE = """
 | 구역 | 담기는 것 | 얻을 수 있는 정보 / 하는 역할 |
 |---|---|---|
 | 결과·시간 | 성공/실패/오류, 시작·종료·소요 시간 | 언제 갱신을 시도했고 결과를 믿어도 되는지 판단한다. 실패해도 스냅샷은 그대로이므로 오프라인 사본이 몇 월 며칠 기준인지 알 수 있다. |
-| 수집 요약 | 페이지·에셋 수, 별칭, 숨은 페이지, 비문서·미확인 링크 수 | 수집이 빠짐없이 됐는지 점검한다. 페이지 수가 갑자기 줄거나 미확인 링크가 늘면 사이트 구조 변경이나 수집 문제의 단서다. |
+| 수집 요약 | 페이지·에셋 수, 별칭, 숨은 페이지, 비문서·미확인 링크 수, 공식 한국어판 수집·없음 수 | 수집이 빠짐없이 됐는지 점검한다. 페이지 수가 갑자기 줄거나 미확인 링크가 늘면 사이트 구조 변경이나 수집 문제의 단서다. 한국어판 없음이 늘면 공식 한글 문서가 영어보다 뒤처졌다는 뜻이다(번역은 하지 않고 영어 원문을 대신 보여 준다). |
 | 추가된 페이지 | 새로 생긴 페이지의 제목·주소·설명·섹션 목록 | 공식 문서에 새 기능이나 가이드가 생겼다는 단서다. 오프라인 사본에 이번에 처음 들어온 내용이라 먼저 읽어 볼 대상을 고르는 데 쓴다. |
-| 삭제된 페이지 | 공식 문서에서 사라진 페이지의 제목·주소 | 기능 폐지, 문서 통합, 주소 이동의 단서다. 이전 스냅샷은 정리되어 오프라인 사본에서도 사라지므로, 이 로그가 그 페이지가 있었다는 마지막 기록이다. 북마크와 링크를 점검한다. |
+| 삭제된 페이지 | 공식 문서에서 사라진 페이지의 제목·주소 | 기능 폐지, 문서 통합, 주소 이동의 단서다. 사이트(site/)에서는 사라지지만 본문은 history/ 에 최근 KEEP_HISTORY 회분 남아 있다. 북마크와 링크를 점검한다. |
 | 내용이 바뀐 페이지 | 글자 수 증감, 추가·삭제된 줄 수 | 변경의 규모를 보여 준다. 크게 늘었으면 새 내용이 붙은 것이고, 증감이 거의 없으면 문구 수정이나 오탈자일 가능성이 크다. |
 | 새 섹션 | 기존 페이지에 새로 생긴 소제목 | 이미 있는 페이지에 새 절차, 옵션, 기능이 추가됐다는 단서다. 새로 알아야 할 내용이 어디인지 바로 짚어 준다. |
 | 삭제된 섹션 | 기존 페이지에서 사라진 소제목 | 폐지, 이동, 통합의 단서다. 내가 쓰던 방법이 더 이상 안내되지 않는지 확인한다. |
 | 내용이 바뀐 섹션 | 소제목은 그대로이고 본문이 달라진 섹션 | 동작, 옵션, 주의사항이 수정됐다는 단서다. 이미 아는 내용 중 다시 확인할 곳을 좁혀 준다. |
 | 추가/삭제된 대표 줄 | 바뀐 줄의 원문 일부(각 3개, 140자까지) | 무엇이 어떻게 바뀌었는지 근거를 보여 준다(버전, 명령어, 옵션 이름 등). 페이지를 열지 않고도 변화 내용을 파악한다. 전체 변경은 diff 파일에 있다. |
 | 전체 diff | 바뀐 페이지별 unified diff 파일 경로 (output/history/날짜.diff) | 대표 줄로 부족할 때 실제 변경 전문을 확인한다. 임의의 두 날짜는 `python docs_diff.py 날짜1 날짜2 [페이지]` 로 비교한다. |
-| 정리 | 이번에 지운 이전 스냅샷과 오래된 이력 | 디스크에서 무엇이 사라졌는지 알려 준다. 스냅샷 폴더는 지워도 이력(history)에서 최근 KEEP_HISTORY 회분 본문은 복원할 수 있다. |
+| 정리 | 이번에 지운 옛 구조의 날짜 폴더와 오래된 이력 | 디스크에서 무엇이 사라졌는지 알려 준다. 이력(history)에서 최근 KEEP_HISTORY 회분 본문은 복원할 수 있다. |
 | 콘솔 출력 | 실행 중 화면에 나온 내용 전부 | 실패 원인 추적과 경고(앵커 불일치 등) 확인에 쓴다. |
 """
 
@@ -196,11 +196,12 @@ def write_log(log_dir, start, end, out_dir, state, console):
              f"- 시작 {start:%H:%M:%S} · 종료 {end:%H:%M:%S} · 소요 {int((end - start).total_seconds())}초",
              f"- 출력 폴더: {os.path.abspath(out_dir)}"]
     if state.get("name"):
-        lines.append(f"- 스냅샷: {state['name']}")
+        lines.append(f"- 스냅샷 날짜: {state['name']}")
     c = state.get("collect")
     if c:
         lines += ["", "## 수집 요약",
                   f"- 페이지 {c['pages']}개 (실패 {c['failed']}), 별칭 {c['redirects']}개, 숨은 페이지 {c['unlisted']}개",
+                  f"- 공식 한국어판 {c['ko']}개, 한국어판 없음(영어 원문 대체) {c['ko_missing']}개",
                   f"- 비문서 링크 {c['non_page']}개, 미확인 링크 {c['unresolved']}개",
                   f"- 에셋 {c['assets']}개 (실패 {c['asset_errors']})"]
     if state.get("change_lines"):
@@ -208,7 +209,7 @@ def write_log(log_dir, start, end, out_dir, state, console):
     if state.get("removed") or state.get("removed_history"):
         lines += ["", "## 정리"]
         if state.get("removed"):
-            lines.append(f"- 지운 이전 스냅샷: {', '.join(state['removed'])}")
+            lines.append(f"- 지운 옛 구조의 날짜 폴더: {', '.join(state['removed'])}")
         if state.get("removed_history"):
             lines.append(f"- 지운 오래된 이력: {', '.join(state['removed_history'])}")
     if state.get("traceback"):
@@ -284,17 +285,34 @@ def prune_history(out_dir, keep):
     return removed
 
 
-def prune(out_dir, keep):
-    """최신 keep 개 날짜의 스냅샷 폴더만 남기고 지운다."""
-    removed = snapshot_dirs(out_dir)[:-keep]
+def remove_legacy_dirs(out_dir):
+    """이전 버전이 만든 output/YYYY-MM-DD/ 폴더(docs.json, assets, html 중복본)를 지운다. 지운 이름들을 돌려준다."""
+    removed = snapshot_dirs(out_dir)
     for n in removed:
         shutil.rmtree(os.path.join(out_dir, n))
     return removed
 
 
+def swap_site(out_dir, new_site):
+    """site/ 를 새 사이트로 교체한다. 교체 도중 실패하면 기존 사이트를 되돌려 놓는다."""
+    final, old = os.path.join(out_dir, SITE_DIR), os.path.join(out_dir, SITE_DIR + ".old")
+    shutil.rmtree(old, ignore_errors=True)
+    had = os.path.exists(final)
+    if had:
+        os.replace(final, old)
+    try:
+        os.replace(new_site, final)
+    except Exception:
+        if had:
+            os.replace(old, final)
+        raise
+    shutil.rmtree(old, ignore_errors=True)
+    return final
+
+
 def _run(out_dir, state):
     """본 작업. 결과·요약을 state 에 담고 종료 코드를 돌려준다 (로그 작성은 main 이 한다)."""
-    name = date.today().isoformat()  # 스냅샷 폴더 이름
+    name = date.today().isoformat()  # 스냅샷 날짜 (이력 파일 이름)
     state["name"] = name
 
     log("[0/2] 인터넷 연결 확인")
@@ -302,7 +320,7 @@ def _run(out_dir, state):
         docs_fetch_json.get(docs_fetch_json.INDEX_URL)
     except Exception as e:
         state["result"] = f"실패: 인터넷 연결 안 됨 ({e})"
-        log(f"연결 실패: {e}\n인터넷 연결을 확인한 뒤 다시 실행하세요. 스냅샷은 변경하지 않았습니다.")
+        log(f"연결 실패: {e}\n인터넷 연결을 확인한 뒤 다시 실행하세요. 기존 사이트는 변경하지 않았습니다.")
         return 1
 
     os.makedirs(out_dir, exist_ok=True)
@@ -311,57 +329,62 @@ def _run(out_dir, state):
     os.makedirs(build)
     try:
         json_path = os.path.join(build, "docs.json")
-        html_dir = os.path.join(build, "html")
+        site_dir = os.path.join(build, SITE_DIR)
 
         log(f"[1/2] 수집: {json_path}")
-        docs_fetch_json.main([json_path])
-        snap = json.load(open(json_path, encoding="utf-8"))
+        docs_fetch_json.main([json_path, os.path.join(site_dir, "assets")])  # 에셋은 사이트 폴더에 바로 저장 (복사본 없음)
+        snap = docs_diff.open_json(json_path)
         failed = [p["url"] for p in snap["pages"] if p["content"] is None]
+        ko_failed = snap.get("ko_errors", {})
+        n_ko = sum(1 for p in snap["pages"] if p.get("ko"))
         state["collect"] = {
             "pages": len(snap["pages"]), "failed": len(failed), "redirects": len(snap.get("redirects", {})),
             "unlisted": sum(p["category"][0] == "_unlisted" for p in snap["pages"]),
+            "ko": n_ko, "ko_missing": len(snap["pages"]) - n_ko - len(ko_failed),
             "non_page": len(snap.get("non_page_links", {})), "unresolved": len(snap.get("unresolved_links", {})),
             "assets": len({a for p in snap["pages"] for a in p.get("assets", {}).values()}),
             "asset_errors": len(snap.get("asset_errors", {}))}
         if failed:
             state["result"] = f"실패: 수집 실패 페이지 {len(failed)}개 (예: {failed[0]})"
-            log(f"수집 실패 페이지 {len(failed)}개 (예: {failed[0]}). 기존 스냅샷은 그대로 두고 중단합니다.")
+            log(f"수집 실패 페이지 {len(failed)}개 (예: {failed[0]}). 기존 사이트는 그대로 두고 중단합니다.")
+            return 1
+        if ko_failed:
+            first = next(iter(ko_failed))
+            state["result"] = f"실패: 한국어판 수집 실패 페이지 {len(ko_failed)}개 (예: {first})"
+            log(f"한국어판 수집 실패 페이지 {len(ko_failed)}개 (예: {first}). 기존 사이트는 그대로 두고 중단합니다.")
             return 1
 
-        log(f"[2/2] HTML 변환: {html_dir}")
-        if docs_json_to_html.main([json_path, html_dir]):
+        log(f"[2/2] HTML 변환: {site_dir}")
+        if docs_json_to_html.main([json_path, site_dir]):
             state["result"] = "실패: HTML 에 없는 파일을 가리키는 링크가 있음"
-            log("HTML 에 없는 파일을 가리키는 링크가 있어 중단합니다. 기존 스냅샷은 그대로입니다.")
+            log("HTML 에 없는 파일을 가리키는 링크가 있어 중단합니다. 기존 사이트는 그대로입니다.")
             return 1
 
-        # 변경 요약 (이전 스냅샷을 지우기 전에 비교)
+        # 변경 요약 (이력을 정리하기 전에 비교)
         prev_path = find_previous(out_dir, name)
         body, counts = make_entry(prev_path, snap)
         state["change_lines"] = body
 
-        # 모두 성공: 결과를 옮긴 뒤 이전 스냅샷을 정리한다
-        final = os.path.join(out_dir, name)
-        shutil.rmtree(final, ignore_errors=True)  # 같은 날 재실행이면 덮어쓴다
-        os.replace(build, final)
+        # 모두 성공: 사이트를 교체하고, 원본 데이터를 이력에 보관한다 (docs.json 은 아직 .building 안에 있음)
+        swap_site(out_dir, site_dir)
+        diff_path = save_history(out_dir, name, json_path, prev_path, snap)
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
-    diff_path = save_history(out_dir, name, os.path.join(final, "docs.json"), prev_path, snap)
     if diff_path:
         state["change_lines"] += [f"전체 diff: {diff_path}", ""]
-    removed = prune(out_dir, KEEP_SNAPSHOTS)
-    state["removed"] = removed
+    state["removed"] = remove_legacy_dirs(out_dir)
     state["removed_history"] = prune_history(out_dir, KEEP_HISTORY)
-    latest = f"{snapshot_dirs(out_dir)[-1]}/html/index.html"
+    latest = f"{SITE_DIR}/index.html"
     with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(f'<!doctype html><meta charset="utf-8"><title>Claude Code Docs</title>'
+        f.write(f'<!doctype html><meta charset="utf-8"><title>Claude Code Docs (offline)</title>'
                 f'<meta http-equiv="refresh" content="0; url={latest}">'
                 f'<a href="{latest}">{latest}</a>\n')
 
-    summary = "이전 스냅샷 없음" if counts is None else f"추가 {counts[0]}, 삭제 {counts[1]}, 변경 {counts[2]}"
-    log(f"완료: {os.path.join(out_dir, 'index.html')} -> {latest} ({len(snap['pages'])}페이지, {summary})")
-    if removed:
-        log(f"정리한 이전 스냅샷: {', '.join(removed)}")
+    summary = "이전 이력 없음" if counts is None else f"추가 {counts[0]}, 삭제 {counts[1]}, 변경 {counts[2]}"
+    log(f"완료: {os.path.join(out_dir, 'index.html')} -> {latest} ({len(snap['pages'])}페이지 x 2개 언어, {summary})")
+    if state["removed"]:
+        log(f"정리한 옛 구조의 날짜 폴더: {', '.join(state['removed'])}")
     if state["removed_history"]:
         log(f"정리한 오래된 이력: {', '.join(state['removed_history'])}")
     state["result"] = "성공"
